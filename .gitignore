@@ -1,0 +1,27 @@
+.venv/
+.pytest_cache/
+.tmp/
+dist/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/playwright-report/
+frontend/test-results/
+**/__pycache__/
+*.pyc
+.gstack/
+
+# Local agent artifacts and development caches
+.superpowers/
+docs/superpowers/
+.gstack/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+.labtasker/webui-profile.json
+.labtasker/.webui-profile-*
+
+.labtasker/webui-token
