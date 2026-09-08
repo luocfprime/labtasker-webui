@@ -21,7 +21,7 @@ docs/superpowers/
 .ruff_cache/
 .DS_Store
 
-.labtasker/webui-profile.json
-.labtasker/.webui-profile-*
+**/.labtasker/webui-profile.json
+**/.labtasker/.webui-profile-*
 
-.labtasker/webui-token
+**/.labtasker/webui-token

@@ -131,3 +131,22 @@ async def test_queue_and_task_path_segments_are_encoded_once() -> None:
     )
     await wait_done(store, operation.id)
     assert upstream.paths == ["/api/v2/queues/queue%20with%20space/tasks/task%2Fwith%2Fslash"]
+
+
+@pytest.mark.asyncio
+async def test_capacity_preserves_active_operations_and_reuses_completed_slots() -> None:
+    upstream = FakeUpstream(delay=0.01)
+    store = OperationStore(upstream, maximum=1)  # type: ignore[arg-type]
+    owner = Connection("http://server", None, 0)
+    first = store.start(owner, "queue", ["t_first"])
+    try:
+        with pytest.raises(UpstreamError) as error:
+            store.start(owner, "queue", ["t_second"])
+        assert error.value.status == 503
+        assert store.get(first.id, owner) is first
+    finally:
+        await asyncio.gather(*store._tasks)
+    second = store.start(owner, "queue", ["t_second"])
+    await wait_done(store, second.id)
+    assert store.get(first.id) is None
+    assert len(store.items) == 1

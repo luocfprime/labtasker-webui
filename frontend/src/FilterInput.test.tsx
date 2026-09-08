@@ -3,13 +3,15 @@ import { afterEach, expect, it, vi } from "vitest";
 import { FilterInput } from "./FilterInput";
 afterEach(cleanup);
 
-it("fills an example without applying it and returns focus to the input", () => {
+it("applies an example immediately and returns focus to the input", () => {
   const change = vi.fn();
-  render(<FilterInput label="Advanced filter expression" value="" onChange={change} />);
+  const commit = vi.fn();
+  render(<FilterInput label="Advanced filter expression" value="" onChange={change} onCommit={commit} />);
   fireEvent.click(screen.getByRole("button", { name: "Filter syntax and examples" }));
-  expect(screen.getByText(/then click Apply/)).toBeVisible();
+  expect(screen.getByText(/apply it immediately/)).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /Negative priority/ }));
   expect(change).toHaveBeenCalledWith("priority < 0");
+  expect(commit).toHaveBeenCalledWith("priority < 0");
   expect(screen.getByRole("textbox")).toHaveFocus();
   expect(screen.queryByRole("region")).not.toBeInTheDocument();
 });
@@ -37,4 +39,15 @@ it("saves and restores a named filter", () => {
   fireEvent.click(screen.getByRole("button", { name: "Filter syntax and examples" }));
   fireEvent.click(screen.getByRole("button", {name: /Urgent priority/}));
   expect(change).toHaveBeenCalledWith("priority > 10");
+});
+
+it("applies on Enter but not while composing text", () => {
+  const apply = vi.fn();
+  render(<FilterInput label="Filter" value="priority > 0" onChange={() => {}} onApply={apply} />);
+  const input = screen.getByRole("textbox");
+  fireEvent.keyDown(input, {key: "Enter", isComposing: true});
+  fireEvent.keyDown(input, {key: "Enter", keyCode: 229});
+  expect(apply).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, {key: "Enter"});
+  expect(apply).toHaveBeenCalledTimes(1);
 });

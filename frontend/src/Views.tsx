@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { saveSetting } from "./profile";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useAnchoredPanel } from "./useAnchoredPanel";
 import { Select } from "./Select";
 
 export type ViewState = {
@@ -33,6 +34,7 @@ export function Views({scope, current, apply}: {scope: string; current: ViewStat
   const root = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  useAnchoredPanel(open, menuButton, menu, 180, "right");
   const selected = data.views.find(v => v.id === data.active);
   const dirty = !!selected && JSON.stringify(selected.state) !== JSON.stringify(current);
   const save = (next: Collection) => {
@@ -64,17 +66,16 @@ export function Views({scope, current, apply}: {scope: string; current: ViewStat
   };
   return <div className="views" ref={root}>
     <div className={`view-selector${dirty ? " is-modified" : ""}`}>
-      <Select label="Data view" value={selected?.id || ""} options={[{value: "", label: "Unsaved view"}, ...data.views.map(v => ({value: v.id, label: v.name}))]}
+      <Select modified={dirty} label="Data view" value={selected?.id || ""} options={[{value: "", label: "Unsaved view"}, ...data.views.map(v => ({value: v.id, label: v.name}))]}
         action={{label: "+ Create view", onSelect: () => start("create")}} onChange={id => {
           const view = data.views.find(v => v.id === id);
           save({...data, active: id}); if (view) apply(structuredClone(view.state));
         }} />
-      {dirty && <span className="view-dirty" role="img" aria-label="Unsaved changes" data-tooltip="Unsaved changes" />}
     </div>
     {dirty && <button className="view-save" onClick={() => save({...data, views: data.views.map(v => v.id === data.active ? {...v, state: structuredClone(current)} : v)})}>Save</button>}
     <button ref={menuButton} type="button" aria-label="View actions" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>⋯</button>
     {open && <div ref={menu} className="views-menu" role="menu" aria-label="View actions"
-      onBlur={e => {if (!root.current?.contains(e.relatedTarget)) setOpen(false);}}
+      onBlur={e => {if (e.relatedTarget && !root.current?.contains(e.relatedTarget)) setOpen(false);}}
       onKeyDown={e => {
         if (e.key === "Escape") {e.preventDefault(); setOpen(false); menuButton.current?.focus();}
         const items = [...(menu.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];

@@ -18,3 +18,11 @@ Object.defineProperty(globalThis, "localStorage", {
     clear: () => localValues.clear(),
   },
 });
+
+// jsdom does not implement browser layout or scrolling APIs.
+globalThis.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+HTMLElement.prototype.scrollIntoView = function () {};

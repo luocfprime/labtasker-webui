@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("connect, inspect, requeue, and delete an exact filtered snapshot", async ({
+test("connect, inspect, requeue, and delete selected filtered tasks", async ({
   page,
 }) => {
   await page.request.post("http://127.0.0.1:18765/__test__/reset");
@@ -26,13 +26,13 @@ test("connect, inspect, requeue, and delete an exact filtered snapshot", async (
     drawer.getByText("CUDA out of memory", { exact: true }),
   ).toBeVisible();
   await drawer.getByRole("button", { name: "Requeue" }).click();
-  await expect(drawer.locator(".task-summary .badge")).toHaveText("pending");
+  await expect(drawer.locator(".task-summary .badge")).toHaveText(/pending/i);
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();
 
   const statusSelect = page.getByRole("combobox", { name: "All statuses" });
   await statusSelect.click();
-  await page.getByRole("heading", { name: "robotwin" }).click();
+  await page.locator(".crumb").click();
   await expect(page.getByRole("listbox")).toHaveCount(0);
   await statusSelect.focus();
   await page.keyboard.press("ArrowDown");
@@ -41,9 +41,9 @@ test("connect, inspect, requeue, and delete an exact filtered snapshot", async (
   await expect(page.getByRole("listbox")).toHaveCount(0);
   await statusSelect.click();
   await page.getByRole("option", { name: "pending", exact: true }).click();
-  await page.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/status=pending/);
-  await page.getByRole("button", { name: "Delete all matching" }).click();
+  await page.getByRole("checkbox", { name: "Select loaded tasks" }).check();
+  await page.getByRole("button", { name: "Delete selected" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Delete 2 Tasks?" });
   await expect(dialog).toContainText("2 immutable Task IDs");

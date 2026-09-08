@@ -25,16 +25,7 @@ jobs:
       - name: Check release tag matches package version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
-          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          expected = f"v{version}"
-          if os.environ["RELEASE_TAG"] != expected:
-              raise SystemExit(f"Release tag must be {expected}")
-          PY
+        run: python scripts/check_versions.py --tag "$RELEASE_TAG"
 
   checks:
     needs: version

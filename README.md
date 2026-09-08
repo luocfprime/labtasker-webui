@@ -1,176 +1,159 @@
 # Labtasker WebUI
 
-A light, observation-first WebUI for an existing Labtasker v2 Server. It shows
-Queue progress, supports server-side Task filtering and scroll-to-load browsing, and
-provides a complete Task inspection drawer. It never submits or edits Tasks.
+Labtasker WebUI connects to an existing [Labtasker](https://github.com/luocfprime/labtasker)
+v2 Server or local project.
+It brings Queue progress, Task details, and structured results into one compact
+workspace, with reusable views for different experiments.
 
-The Task list fetches the next cursor batch as you approach the bottom, keeps
-loaded rows and selections, and shows a retry action if loading more fails.
-Only visible rows are rendered. Drag a column boundary to resize it; widths are
-remembered in this browser, and double-click restores a default width. List dates
-use local `MM-DD HH:mm` with full timestamps in tooltips and the Task drawer.
-While reading older rows, background refresh does not reorder the list. Returning to the top resumes live
-refresh; the Refresh button can also update the list explicitly.
+[![Labtasker WebUI showing Queue progress, filters, and custom Task columns](https://raw.githubusercontent.com/luocfprime/labtasker-webui/main/assets/screenshot.png)](https://raw.githubusercontent.com/luocfprime/labtasker-webui/main/assets/screenshot.png)
 
-Allowed controls are deliberately limited to cancel, requeue, and permanent
-deletion. Filtered deletion first resolves an immutable snapshot of at most
-1,000 Task IDs and then reports each non-atomic result.
+The key features are:
 
-## Run
+- **Queue progress at a glance:** Track pending, running, succeeded, failed, and
+  cancelled Tasks. Status counts follow the same filters as the Task list.
+- **Flexible result exploration:** Filter Task fields and nested values, or add
+  custom columns such as `args.test_num` and `result.succ_rate`. Resize, reorder,
+  and double-click columns to fit their contents.
+- **Reusable data views:** Save filters, sorting, and column layouts for each
+  connection and Queue. Switch views without rebuilding the table each time.
+- **Complete Task inspection:** Open a Task to inspect its arguments, metadata,
+  execution timeline, errors, and results. Cancel, requeue, or delete selected
+  Tasks through explicit controls.
+- **Easy local use:** Launch from Python without Node.js. Remember connections
+  and UI preferences in the WebUI working directory's `.labtasker/` folder.
 
-The published package is designed to run without Node.js:
+## Installation
+
+Labtasker WebUI requires Python 3.11 or newer. Run it with `uv`:
 
 ```bash
 uvx labtasker-webui
 ```
 
-Then open <http://127.0.0.1:8080> and enter the Labtasker Server URL and optional
-Bearer token. Local launches remember the connection and UI settings in
-`.labtasker/webui-profile.json` (see Project profiles below). Credentials remain
-on the backend; the browser uses an opaque `HttpOnly`, `SameSite=Strict` cookie.
-With `--no-profile`, interactive sessions expire after 12 hours of inactivity
-or a process restart.
+Or install and run it with pip:
 
-Choose **HTTP Server** or **Local project** on the connection page. Addresses,
-project directories and tokens are configured in the WebUI, not CLI arguments.
+```bash
+python -m pip install labtasker-webui
+labtasker-webui
+```
+
+Open <http://127.0.0.1:8080> to connect. The Python package includes the built
+frontend; Node.js is only needed for development and building the package.
+
+## Example
+
+Choose a connection type on the connection page:
+
+- **HTTP Server:** Enter a Server URL starting with `http://` or `https://`, plus
+  a Bearer token if the Server requires one.
+- **Local project:** Enter the directory of an already-running Labtasker project.
+  `.` refers to the WebUI process's working directory. Local attachment uses the
+  project's Unix socket and requires POSIX and a loopback bind.
+
+Open a Queue, then filter its Tasks:
+
+```python
+status in ["pending", "running"]
+```
+
+Add a custom column through **Columns**, using a JSON path:
+
+```text
+args.test_num
+result.succ_rate
+```
+
+Missing values stay blank. Dropdowns and filter presets apply immediately;
+text filters apply on Enter or when leaving the input group. **Apply** remains
+available as a fallback.
+
+Use **+ Create view** beside the breadcrumbs to save the current filters,
+sorting, and columns. A dot marks changes to the selected view; **Save** updates
+it. The actions menu provides **Save as…**, **Rename**, **Reset changes**, and
+**Delete**. Deleting a view leaves Tasks and the current layout intact.
+
+The list loads more Tasks as you scroll and preserves existing selections.
+While reading older rows, background refresh does not reorder the list.
+Returning to the top resumes live refresh; **Refresh** updates it explicitly.
+Click a Task to open its details. Dates use local time, with full timestamps
+available on hover.
+
+## Project profiles
+
+On loopback binds, the WebUI remembers settings in its working directory:
+
+| File | Contents |
+| --- | --- |
+| `.labtasker/webui-profile.json` | Connection, columns, views, filters, and UI preferences |
+| `.labtasker/webui-token` | Bearer token, stored separately with owner-only permissions |
+
+Both files use `0600` permissions. The token is plaintext in its protected local
+file; it is never returned by the profile API or stored in browser storage.
+The browser uses an opaque `HttpOnly`, `SameSite=Strict` session cookie.
+
+Profiles are separate from Labtasker's `.labtasker/config.toml`. Named views and
+column layouts are scoped to the connection and Queue. Disconnecting removes
+the remembered connection while retaining UI preferences.
+
+Use `--no-profile` to disable disk persistence. Browser-local settings remain
+available; interactive connections then expire after 12 hours of inactivity or
+a WebUI restart. Profiles are disabled for non-loopback binds.
 
 ## Configuration
+
+Connection addresses, project directories, and tokens are configured in the UI.
+The CLI only controls how the WebUI itself runs:
 
 | CLI | Environment | Default |
 | --- | --- | --- |
 | `--host` | `LABTASKER_WEBUI_HOST` | `127.0.0.1` |
 | `--port` | `LABTASKER_WEBUI_PORT` | `8080` |
-| `--no-profile` | — | persistence enabled on loopback |
+| `--no-profile` | — | Persistence enabled on loopback |
 
-Non-loopback deployments require the comma-separated
-`LABTASKER_WEBUI_ALLOWED_SERVER_ORIGINS` environment variable. For example:
+Non-loopback deployments require an explicit allowlist of upstream origins:
 
 ```bash
 LABTASKER_WEBUI_ALLOWED_SERVER_ORIGINS=https://tasks.example labtasker-webui --host 0.0.0.0
 ```
 
-Changing `--host` expands the trust boundary. Labtasker WebUI has no user,
-role, or authorization system of its own. For laboratory-network deployment,
-restrict network access and put authentication/TLS at a trusted reverse proxy.
-The BFF revalidates upstream origins and every redirect, uses HTTPX's default
-environment proxy settings, and never returns the configured token to the browser.
+Separate multiple origins with commas. The WebUI has no user or role system;
+restrict network access and use authentication/TLS at a trusted reverse proxy
+for shared deployments. The backend validates upstream origins and redirects,
+uses HTTPX's environment proxy settings, and keeps credentials out of browser
+responses.
+
+## Scope
+
+Labtasker WebUI inspects existing workloads and supports cancellation, requeue,
+and permanent deletion of explicitly selected Task IDs. Batch deletion reports
+each result; it is not an atomic operation.
+
+Use the Labtasker Client, CLI, or Workers to submit and execute Tasks. The WebUI
+does not submit or edit Tasks, schedule work, allocate resources, or manage the
+Labtasker process. Local mode only attaches to an existing instance and never
+opens its database.
+
+## Documentation
+
+- [Specification](https://github.com/luocfprime/labtasker-webui/blob/main/docs/reference/specification.md): product behavior and state ownership.
+- [Contributing](https://github.com/luocfprime/labtasker-webui/blob/main/CONTRIBUTING.md): setup and development conventions.
+- [Agent guide](https://github.com/luocfprime/labtasker-webui/blob/main/AGENTS.md): project boundaries and internal workflow entry points.
+- [Labtasker documentation](https://luocfprime.github.io/labtasker/): Tasks,
+  Queues, Workers, and the upstream API.
 
 ## Development
 
 ```bash
-npm --prefix frontend install
+npm ci --prefix frontend
 npm --prefix frontend run build
-python -m venv .venv
-.venv/bin/pip install -e '.[test,dev,release]'
-.venv/bin/labtasker-webui
+uv sync --group dev --frozen
+uv run labtasker-webui
 ```
 
-Checks:
+See [Contributing](https://github.com/luocfprime/labtasker-webui/blob/main/CONTRIBUTING.md) for the validation gate and development, QA,
+and release SOPs. CI covers Python checks, frontend tests, three browser engines,
+and installation of the built package without Node.js.
 
-```bash
-npm --prefix frontend test
-npm --prefix frontend run build
-.venv/bin/pytest
-.venv/bin/python -m build
-.venv/bin/python -m twine check --strict dist/*
-.venv/bin/python tests/packaging_smoke.py dist/labtasker_webui-*.whl
-```
+## License
 
-Browser workflow coverage uses Playwright and its three desktop engines:
-
-```bash
-npx --prefix frontend playwright install chromium firefox webkit
-npm --prefix frontend run test:e2e
-```
-
-An opt-in, read-only contract smoke test can target a separately running real
-Labtasker v2 Server:
-
-```bash
-LABTASKER_REAL_SERVER_URL=http://127.0.0.1:8000 \
-  .venv/bin/pytest -m integration tests/test_real_server.py
-```
-
-Set `LABTASKER_REAL_SERVER_TOKEN` as well when that Server requires a Bearer
-token. The default test suite skips this external integration test.
-
-The Vite build is bundled into the Python wheel. Node.js is only a development
-and package-build dependency. The project does not publish a Docker image.
-
-
-## CI and dependency updates
-
-GitHub Actions runs frontend tests and builds, Ruff and mypy, Python tests on
-3.11–3.14, and Playwright on Chromium, Firefox, and WebKit for pushes and pull
-requests. CI builds both the source distribution and wheel, checks their metadata,
-and installs the wheel into a clean environment for a startup smoke test without
-Node.js. Failed browser tests retain screenshots and traces as artifacts.
-
-Dependabot checks npm, Python, and GitHub Actions dependencies weekly. Compatible
-npm/Python updates are grouped; updates require review and passing CI.
-
-## PyPI releases
-
-The `Publish to PyPI` workflow runs when a GitHub Release is published. Its tag
-must match the version in `pyproject.toml` (for example, `v0.1.0`). It runs the full
-CI workflow and publishes the verified wheel and source distribution only after
-all checks pass.
-
-Before the first release:
-
-1. Create the GitHub repository environment named `pypi`.
-2. Configure a [PyPI Trusted Publisher](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
-   for `labtasker-webui` with your GitHub owner and repository, workflow filename
-   `release.yml`, and environment `pypi`. For a new package, use a pending publisher.
-3. Update the package version, push the corresponding `vVERSION` tag, and publish
-   its GitHub Release.
-
-Authentication uses GitHub OIDC; no PyPI API token is stored in GitHub secrets.
-Running CI manually builds downloadable distributions without publishing them.
-
-## Project profiles and saved filters
-
-When bound to localhost, the CLI automatically uses
-`.labtasker/webui-profile.json` in its working directory. A successful connection
-saves the Server URL and writes the token separately to `.labtasker/webui-token`;
-restarting WebUI restores the connection automatically.
-The profile also saves visible/custom columns, column order and widths, drawer
-width, last Queue, per-Queue applied filters/sort settings, and named filter
-presets. Open the filter help menu to select a common preset or save your current
-expression under a name. Selecting a preset fills the input; Apply runs it.
-
-The profile is separate from Labtasker's `.labtasker/config.toml`, is ignored by
-Git, and is atomically written with owner-only file permissions (`0600`). The separate token file also uses `0600` permissions. Tokens
-are stored in plaintext in that protected local file and are never returned by
-the profile API or stored in browser storage. Disconnect removes the remembered
-connection while keeping UI preferences. `--no-profile` disables persistence; profiles are
-disabled for non-loopback binds. Browser-local settings are used as a fallback
-when persistence is disabled, and are imported on the first profile-enabled run.
-
-### Attach to a local instance
-
-Run `labtasker-webui`, select **Local project** on the connection page, and enter
-the project directory (`.` means the WebUI process working directory).
-
-The instance must already be running. WebUI only resolves the canonical project
-path and attaches to its Unix socket; it never starts, stops, or restarts Labtasker,
-and never opens the database. Local attachment requires POSIX and a loopback bind.
-It uses no token. The selected connection and data views are remembered in the
-WebUI working directory's `.labtasker/`, independently of the connected project's
-own Labtasker configuration. The socket discovery adapter uses Labtasker Client
-2.x; the regular API v2 compatibility check still applies.
-
-### Named data views
-
-The view selector beside the breadcrumbs manages reusable data views separately
-from connection credentials. Each view captures applied filters, sorting, visible
-columns, custom JSON paths, column order, and widths. Views are scoped to a Server
-(or local project) and Queue. The selector ends with **+ Create view**. A small dot
-marks unsaved changes and a **Save** button updates the selected view. The actions
-menu contains **Save as…**, **Rename**, **Reset changes**, and **Delete**. Naming
-opens a focused dialog; deleting asks for confirmation and never deletes Tasks.
-Changing the working layout never silently overwrites a saved view.
-Deleting a view leaves Tasks and the current working layout intact. Named views
-are persisted in `webui-profile.json`; credentials remain separate from view data.
-The connection header explicitly labels HTTP or Local and shows the corresponding
-Server address or canonical project directory, with the full value on hover.
+[Apache-2.0](https://github.com/luocfprime/labtasker-webui/blob/main/LICENSE), matching Labtasker.

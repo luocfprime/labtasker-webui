@@ -20,7 +20,7 @@ test("column picker stays open for selection and dismisses outside or with Escap
   await expect(
     page.getByRole("columnheader", { name: "Priority", exact: true }),
   ).toBeVisible();
-  await page.getByRole("heading", { name: "robotwin" }).click();
+  await page.locator(".crumb").click();
   await expect(menu).not.toHaveAttribute("open");
   await trigger.click();
   await menu.getByLabel("Status", { exact: true }).focus();

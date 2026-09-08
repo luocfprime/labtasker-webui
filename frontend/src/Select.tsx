@@ -1,12 +1,20 @@
 import { useEffect, useId, useRef, useState } from "react";
 
+import { useAnchoredPanel } from "./useAnchoredPanel";
+
 type Option = { value: string; label: string };
-export function Select({ label, value, options, onChange, action }: {
-  label: string; value: string; options: Option[]; onChange: (value: string) => void; action?: {label: string; onSelect: () => void};
+export function Select({ label, value, options, onChange, action, modified }: {
+  label: string; value: string; options: Option[]; onChange: (value: string) => void; action?: {label: string; onSelect: () => void}; modified?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useAnchoredPanel(open, trigger, panel, label === "Data view" ? 280 : 160, "left", true);
+  useEffect(() => {
+    if (open) panel.current?.querySelector<HTMLElement>('[role="option"].highlighted')?.scrollIntoView({block: "nearest"});
+  }, [open, active]);
   const id = useId();
   const selected = Math.max(0, options.findIndex((option) => option.value === value));
   useEffect(() => {
@@ -24,7 +32,7 @@ export function Select({ label, value, options, onChange, action }: {
   return <div className="ui-select" ref={root} onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
-    <button type="button" role="combobox" aria-label={label} aria-haspopup="listbox"
+    <button ref={trigger} type="button" role="combobox" aria-label={label} aria-haspopup="listbox"
       aria-expanded={open} aria-controls={`${id}-list`} aria-activedescendant={open ? `${id}-${active}` : undefined}
       onClick={() => { setActive(selected); setOpen(!open); }}
       onKeyDown={(event) => {
@@ -42,15 +50,15 @@ export function Select({ label, value, options, onChange, action }: {
           if (next >= 0) { event.preventDefault(); setOpen(true); setActive(next); }
         }
       }}>
-      <span>{options[selected].label}</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+      <span className="select-value"><span className="select-value-text">{options[selected].label}</span>{modified && <span className="view-dirty" role="img" aria-label="Unsaved changes" data-tooltip="Unsaved changes" />}</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
     </button>
-    {open && <div className="ui-select-menu">
+    {open && <div ref={panel} className="ui-select-menu">
       <div id={`${id}-list`} role="listbox" aria-label={label}>
       {options.map((option, index) => <div key={option.value} id={`${id}-${index}`} role="option"
         aria-selected={value === option.value} className={active === index ? "highlighted" : ""}
         onPointerMove={() => setActive(index)} onMouseDown={(event) => event.preventDefault()}
         onClick={() => choose(index)}>
-        <span>{option.label}</span><span aria-hidden="true">{value === option.value ? "✓" : ""}</span>
+        <span data-tooltip={option.label}>{option.label}</span><span aria-hidden="true">{value === option.value ? "✓" : ""}</span>
       </div>)}
       </div>
       {action && <button type="button" className="select-action" onClick={() => {setOpen(false); action.onSelect();}}>{action.label}</button>}

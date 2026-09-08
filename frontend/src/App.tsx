@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   useInfiniteQuery,
+  useIsMutating,
   useMutation,
   useQuery,
   useQueryClient,
@@ -14,8 +15,11 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import { saveSetting } from "./profile";
-import { pathParts, pathValue, readSavedList } from "./customColumns";
+import { pathParts, pathValue } from "./customColumns";
+import { isPermanentRequestError } from "./queryPolicy";
 import { FilterInput } from "./FilterInput";
+import { readQueueLayout, saveQueueLayout } from "./queueLayout";
+import { statusCountParams } from "./countFilters";
 import { Views } from "./Views";
 import { Select } from "./Select";
 import { messages as m } from "./messages";
@@ -110,6 +114,19 @@ type Filters = {
   order_by: string;
   descending: boolean;
 };
+function filtersFromUrl(): Filters {
+  const url = new URLSearchParams(location.search);
+  return {
+    status: url.get("status") || "",
+    name: url.get("name") || "",
+    filter: url.get("filter") || "",
+    order_by: url.get("order_by") || "created_at",
+    descending: url.get("descending") !== "false",
+  };
+}
+function sameFilters(a: Filters, b: Filters) {
+  return (Object.keys(a) as (keyof Filters)[]).every(key => a[key] === b[key]);
+}
 const statuses: Status[] = [
   "pending",
   "running",
@@ -131,7 +148,7 @@ type TaskColumn = (typeof taskColumns)[number];
 const EMPTY_TASKS: Task[] = [];
 export const adaptivePolling =
   (base: number) => (query: { state: { fetchFailureCount: number } }) => {
-    if (document.visibilityState === "hidden") return false;
+    if (document.visibilityState === "hidden" || ("error" in query.state && isPermanentRequestError(query.state.error))) return false;
     return Math.min(
       base * 2 ** Math.min(query.state.fetchFailureCount, 4),
       60_000,
@@ -434,7 +451,7 @@ function Brand() {
         width={24}
         height={24}
       />
-      <strong>labtasker</strong>
+      <strong>Labtasker</strong>
     </div>
   );
 }
@@ -596,18 +613,22 @@ function Overview({
 function Workspace({
   queue,
   initialStatus,
+  historyNavigation,
   server,
   back,
 }: {
   queue: string;
   initialStatus: string;
+  historyNavigation: boolean;
   server: string;
   back: () => void;
 }) {
   const qc = useQueryClient();
+  const scope = `${server}/${queue}`;
+  const [initialLayout] = useState(() => readQueueLayout(scope));
   const [filters, setFilters] = useState<Filters>(() => {
     const url = new URLSearchParams(location.search);
-    if (!initialStatus && !["status", "name", "filter", "order_by", "descending"].some((key) => url.has(key))) {
+    if (!historyNavigation && !initialStatus && !["status", "name", "filter", "order_by", "descending"].some((key) => url.has(key))) {
       try {
         const saved = JSON.parse(localStorage.getItem("labtasker:filters:v1") || "{}")[`${server}/${queue}`];
         if (saved && ["status", "name", "filter", "order_by"].every((key) => typeof saved[key] === "string") && typeof saved.descending === "boolean") return saved;
@@ -622,6 +643,38 @@ function Workspace({
     };
   });
   const columnMenuRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const menu = columnMenuRef.current;
+    const trigger = menu?.querySelector("summary");
+    const panel = menu?.querySelector<HTMLDivElement>(":scope > div");
+    if (!menu || !trigger || !panel) return;
+    const position = () => {
+      if (!menu.open) return;
+      const margin = 12;
+      const gap = 6;
+      const anchor = trigger.getBoundingClientRect();
+      const width = Math.min(370, window.innerWidth - margin * 2);
+      const below = Math.max(0, window.innerHeight - anchor.bottom - gap - margin);
+      const above = Math.max(0, anchor.top - gap - margin);
+      const upwards = below < Math.min(panel.scrollHeight, 520) && above > below;
+      panel.style.width = `${width}px`;
+      panel.style.left = `${Math.max(margin, Math.min(anchor.right - width, window.innerWidth - width - margin))}px`;
+      panel.style.maxHeight = `${Math.min(520, upwards ? above : below)}px`;
+      panel.style.top = `${upwards ? Math.max(margin, anchor.top - gap - panel.getBoundingClientRect().height) : Math.max(margin, anchor.bottom + gap)}px`;
+    };
+    menu.addEventListener("toggle", position);
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    const observer = new ResizeObserver(position);
+    observer.observe(trigger);
+    return () => {
+      menu.removeEventListener("toggle", position);
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+      observer.disconnect();
+    };
+  }, []);
+
   useEffect(() => {
     const dismissOutside = (event: Event) => {
       const menu = columnMenuRef.current;
@@ -661,9 +714,7 @@ function Workspace({
   const [columnSizing, setColumnSizing] = useState<Record<string, number>>(
     () => {
       try {
-        const stored = JSON.parse(
-          localStorage.getItem("labtasker:column-widths") || "{}",
-        );
+        const stored = initialLayout.widths || {};
         return Object.fromEntries(
           Object.entries(stored).filter(
             ([key, value]) =>
@@ -679,12 +730,6 @@ function Workspace({
     },
   );
   useEffect(() => {
-    saveSetting(
-      "labtasker:column-widths",
-      JSON.stringify(columnSizing),
-    );
-  }, [columnSizing]);
-  useEffect(() => {
     const el = taskListRef.current;
     if (!el) return;
     const update = () =>
@@ -698,16 +743,14 @@ function Workspace({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     try {
-      const stored = JSON.parse(
-        localStorage.getItem("labtasker:columns:v3") || sessionStorage.getItem("labtasker:columns:v2") || "null",
-      );
+      const stored = initialLayout.visible;
       if (Array.isArray(stored))
         return new Set(stored.filter((item) => typeof item === "string"));
     } catch {}
     return new Set(taskColumns);
   });
-  const [customPaths, setCustomPaths] = useState(() => readSavedList("labtasker:customColumns:v1").filter((path) => pathParts(path)));
-  const [savedOrder, setSavedOrder] = useState(() => readSavedList("labtasker:columnOrder:v1"));
+  const [customPaths, setCustomPaths] = useState(() => (Array.isArray(initialLayout.custom) ? initialLayout.custom : []).filter((path) => typeof path === "string" && pathParts(path)));
+  const [savedOrder, setSavedOrder] = useState(() => (Array.isArray(initialLayout.order) ? initialLayout.order : []).filter(id => typeof id === "string"));
   const [dragColumn, setDragColumn] = useState<string | null>(null);
   const [dropColumn, setDropColumn] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
@@ -722,15 +765,14 @@ function Workspace({
     [next[index], next[index + offset]] = [next[index + offset], next[index]];
     setSavedOrder(next);
   };
-  useEffect(() => { saveSetting("labtasker:customColumns:v1", JSON.stringify(customPaths)); }, [customPaths]);
-  useEffect(() => { saveSetting("labtasker:columnOrder:v1", JSON.stringify(savedOrder)); }, [savedOrder]);
+  useEffect(() => {
+    saveQueueLayout(scope, {visible: [...visibleColumns], custom: customPaths, order: savedOrder, widths: columnSizing});
+  }, [scope, visibleColumns, customPaths, savedOrder, columnSizing]);
   const originTaskId = useRef<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(() =>
     new URLSearchParams(location.search).get("task"),
   );
   const [confirm, setConfirm] = useState<DeleteTarget | null>(null);
-  const [snapshotError, setSnapshotError] = useState("");
-  const [snapshotBusy, setSnapshotBusy] = useState(false);
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
     if (v !== "" && k !== "descending") params.set(k, String(v));
@@ -790,14 +832,15 @@ function Workspace({
     }
   }, [tasks.error, back]);
   const queueCounts = useQuery<Record<Status, number>>({
-    queryKey: ["queue-counts", queue],
+    queryKey: ["queue-counts", queue, filters.status, filters.name, filters.filter],
     queryFn: async () => {
       const values = await Promise.all(
-        statuses.map((status) =>
-          api<{ count: number }>(
-            `/api/webui/queues/${encodeURIComponent(queue)}/tasks/count?status=${status}`,
-          ),
-        ),
+        statuses.map((status) => {
+          const params = statusCountParams(filters, status);
+          return params === null ? Promise.resolve({count: 0}) : api<{ count: number }>(
+            `/api/webui/queues/${encodeURIComponent(queue)}/tasks/count?${params}`,
+          );
+        }),
       );
       return Object.fromEntries(
         statuses.map((status, index) => [status, values[index].count]),
@@ -826,7 +869,11 @@ function Workspace({
   useEffect(() => {
     saveSetting("labtasker:lastQueue", queue);
   }, [queue]);
+  const urlInitialized = useRef(false);
   useEffect(() => {
+    const first = !urlInitialized.current;
+    urlInitialized.current = true;
+    if (!first && sameFilters(filters, filtersFromUrl())) return;
     const url = new URL(location.href);
     url.searchParams.set("queue", queue);
     for (const key of [
@@ -844,14 +891,24 @@ function Workspace({
         url.searchParams.set(key, String(value));
       }
     });
-    history.replaceState({}, "", url);
+    if (first) history.replaceState(history.state, "", url);
+    else history.pushState(history.state, "", url);
   }, [queue, filters]);
   useEffect(() => {
-    const onBack = () =>
-      setTaskId(new URLSearchParams(location.search).get("task"));
+    const onBack = () => {
+      const url = new URLSearchParams(location.search);
+      if (url.get("queue") !== queue) return;
+      const restored = filtersFromUrl();
+      if (!sameFilters(filters, restored)) {
+        setFilters(restored);
+        setDraft(restored);
+        setSelected(new Set());
+      }
+      setTaskId(url.get("task"));
+    };
     addEventListener("popstate", onBack);
     return () => removeEventListener("popstate", onBack);
-  }, []);
+  }, [queue, filters]);
   useEffect(() => {
     if (!taskId && originTaskId.current) {
       const selector = `[data-task-id="${CSS.escape(originTaskId.current)}"]`;
@@ -861,8 +918,17 @@ function Workspace({
     }
   }, [taskId]);
   const apply = () => {
+    if (sameFilters(filters, draft)) return;
     setFilters(draft);
-    setSelected(new Set());
+    if (["status", "name", "filter"].some(key => filters[key as keyof Filters] !== draft[key as keyof Filters])) setSelected(new Set());
+  };
+  const applyFields = (values: Partial<Filters>) => {
+    setDraft(current => ({ ...current, ...values }));
+    setFilters(current => {
+      const next = { ...current, ...values };
+      return sameFilters(current, next) ? current : next;
+    });
+    if (Object.entries(values).some(([key, value]) => ["status", "name", "filter"].includes(key) && filters[key as keyof Filters] !== value)) setSelected(new Set());
   };
   const all = useMemo(() => {
     if (!tasks.data) return EMPTY_TASKS;
@@ -876,6 +942,7 @@ function Workspace({
       });
   }, [tasks.data]);
   const allChecked = all.length > 0 && all.every((t) => selected.has(t.id));
+  const partiallyChecked = !allChecked && all.some(task => selected.has(task.id));
   const toggle = (id: string) =>
     setSelected((old) => {
       const n = new Set(old);
@@ -887,7 +954,6 @@ function Workspace({
       const next = new Set(current);
       next.has(column) ? next.delete(column) : next.add(column);
       if (next.size === 0) next.add("task");
-      saveSetting("labtasker:columns:v3", JSON.stringify([...next]));
       return next;
     });
   };
@@ -903,6 +969,8 @@ function Workspace({
             aria-label={m.workspace.selectPage}
             type="checkbox"
             checked={allChecked}
+            aria-checked={partiallyChecked ? "mixed" : allChecked}
+            ref={element => { if (element) element.indeterminate = partiallyChecked; }}
             onChange={() =>
               setSelected((old) => {
                 const next = new Set(old);
@@ -994,7 +1062,7 @@ function Workspace({
         },
       })),
     ],
-    [all, allChecked, selected, customPaths],
+    [all, allChecked, partiallyChecked, selected, customPaths],
   );
   const table = useReactTable({
     data: all,
@@ -1064,6 +1132,8 @@ function Workspace({
   const refreshList = () => {
     taskListRef.current?.scrollTo({ top: 0 });
     void tasks.refetch();
+    void queueCounts.refetch();
+    void matchingCount.refetch();
   };
   const openTask = (id: string) => {
     originTaskId.current = id;
@@ -1084,56 +1154,6 @@ function Workspace({
       url.searchParams.delete("task");
       history.replaceState({}, "", url);
       setTaskId(null);
-    }
-  };
-  const snapshotDelete = async () => {
-    setSnapshotBusy(true);
-    setSnapshotError("");
-    try {
-      const result = await api<{ task_ids: string[]; selector: Selector }>(
-        `/api/webui/queues/${encodeURIComponent(queue)}/delete-snapshot`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            status: filters.status || null,
-            name: filters.name || null,
-            filter: filters.filter || null,
-          }),
-        },
-      );
-      if (!result.task_ids.length) {
-        setSnapshotError(m.workspace.noFilterMatches);
-        return;
-      }
-      setConfirm({ task_ids: result.task_ids, selector: result.selector });
-    } catch (error) {
-      setSnapshotError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSnapshotBusy(false);
-    }
-  };
-  const selectAllMatching = async () => {
-    setSnapshotBusy(true);
-    setSnapshotError("");
-    try {
-      const result = await api<{ task_ids: string[] }>(
-        `/api/webui/queues/${encodeURIComponent(queue)}/delete-snapshot`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            status: filters.status || null,
-            name: filters.name || null,
-            filter: filters.filter || null,
-          }),
-        },
-      );
-      setSelected(new Set(result.task_ids));
-      if (!result.task_ids.length)
-        setSnapshotError(m.workspace.noFilterMatches);
-    } catch (error) {
-      setSnapshotError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSnapshotBusy(false);
     }
   };
   return (
@@ -1166,36 +1186,42 @@ function Workspace({
             onClick={() => {
               const f = { ...filters, status: filters.status === s ? "" : s };
               setFilters(f);
-              setDraft(f);
+              setDraft(current => ({ ...current, status: f.status }));
               setSelected(new Set());
             }}
           >
             <span>{m.status[s]}</span>
-            <strong>{queueCounts.data?.[s] ?? "—"}</strong>
+            <strong>{queueCounts.isError ? "—" : queueCounts.data?.[s] ?? "—"}</strong>
           </button>
         ))}
       </div>
       <div className="toolbar">
         <Select label={m.workspace.allStatuses} value={draft.status}
-          onChange={(status) => setDraft({ ...draft, status })}
+          onChange={(status) => applyFields({ status })}
           options={[{value: "", label: m.workspace.allStatuses}, ...statuses.map((s) => ({value: s, label: m.status[s]}))]} />
         <input
           aria-label={m.workspace.taskName}
+          onBlur={event => applyFields({ name: event.currentTarget.value })}
+          onKeyDown={event => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+              event.preventDefault(); apply();
+            }
+          }}
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           placeholder={m.workspace.taskName}
         />
-        <FilterInput label={m.workspace.advancedFilter} value={draft.filter}
+        <FilterInput label={m.workspace.advancedFilter} value={draft.filter} onApply={apply} onCommit={filter => applyFields({ filter })}
           onChange={(filter) => setDraft({ ...draft, filter })} />
         <Select label={m.workspace.sortField} value={draft.order_by}
-          onChange={(order_by) => setDraft({ ...draft, order_by })}
+          onChange={(order_by) => applyFields({ order_by })}
           options={[
             {value: "created_at", label: m.columns.created}, {value: "updated_at", label: m.columns.updated},
             {value: "name", label: m.columns.name}, {value: "status", label: m.columns.status},
             {value: "priority", label: m.columns.priority}, {value: "attempt", label: m.columns.attempt},
           ]} />
         <Select label={m.workspace.sortDirection} value={draft.descending ? "desc" : "asc"}
-          onChange={(direction) => setDraft({ ...draft, descending: direction === "desc" })}
+          onChange={(direction) => applyFields({ descending: direction === "desc" })}
           options={[{value: "desc", label: m.workspace.descending}, {value: "asc", label: m.workspace.ascending}]} />
         <details className="column-menu" ref={columnMenuRef}>
           <summary>{m.common.columns}</summary>
@@ -1238,8 +1264,7 @@ function Workspace({
               setCustomPaths((paths) => [...paths, path]);
               setVisibleColumns((current) => {
                 const next = new Set([...current, `path:${path}`]);
-                saveSetting("labtasker:columns:v3", JSON.stringify([...next]));
-                return next;
+                          return next;
               });
               setNewPath(""); setPathError("");
             }}>
@@ -1253,33 +1278,12 @@ function Workspace({
         <button className="secondary compact" onClick={apply}>
           {m.common.apply}
         </button>
-        <button
-          className="danger-link"
-          disabled={
-            snapshotBusy ||
-            !Boolean(filters.status || filters.name || filters.filter.trim())
-          }
-          onClick={snapshotDelete}
-        >
-          {snapshotBusy ? m.workspace.resolving : m.workspace.deleteAllMatching}
-        </button>
-        <button
-          className="link"
-          disabled={
-            snapshotBusy ||
-            !Boolean(filters.status || filters.name || filters.filter.trim())
-          }
-          onClick={selectAllMatching}
-        >
-          {m.workspace.selectAllMatching}
-        </button>
       </div>
       {tasks.error instanceof ApiRequestError && tasks.error.status === 422 && (
         <div className="field-error" role="alert">
           {tasks.error.message}
         </div>
       )}
-      {snapshotError && <div className="error">{snapshotError}</div>}
       {selected.size > 0 && (
         <div className="selection">
           {m.workspace.selected(selected.size)}{" "}
@@ -1637,6 +1641,7 @@ export function TaskDrawer({
   changed: () => void;
   requestDelete: (id: string) => void;
 }) {
+  const qc = useQueryClient();
   const [width, setWidth] = useState(() => {
     const stored = Number(localStorage.getItem("labtasker:drawerWidth"));
     return Number.isFinite(stored) && stored >= 480 && stored <= 800
@@ -1657,26 +1662,33 @@ export function TaskDrawer({
       close();
     }
   }, [query.error, close]);
+  const actionKey = ["task-action", queue, taskId];
+  const actionPending = useIsMutating({mutationKey: actionKey}) > 0;
   const mutation = useMutation({
-    mutationFn: (a: string) =>
+    mutationKey: actionKey,
+    mutationFn: ({id, action}: {id: string; action: string}) =>
       api(
-        `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(taskId)}/${a}`,
+        `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(id)}/${action}`,
         { method: "POST" },
       ),
-    onSuccess: () => {
-      query.refetch();
+    onSuccess: (_result, {id}) => {
+      void qc.invalidateQueries({queryKey: ["task", queue, id]});
       changed();
     },
-    onError: (error) => {
+    onError: (error, {id}) => {
       if (error instanceof ApiRequestError && error.status === 409) {
-        void query.refetch();
+        void qc.invalidateQueries({queryKey: ["task", queue, id]});
         changed();
       }
     },
   });
+  const resetAction = mutation.reset;
+  useEffect(() => { resetAction(); }, [queue, taskId, resetAction]);
   const t = query.data;
   const durationNow = useExecutionClock(t?.status === "running");
-  const action = (a: string) => mutation.mutate(a);
+  const action = (a: string) => {
+    if (!actionPending) mutation.mutate({id: taskId, action: a});
+  };
   const resizeFrom = (startX: number, startWidth: number) => {
     const move = (event: PointerEvent) => {
       setWidth(
@@ -1762,10 +1774,10 @@ export function TaskDrawer({
                     <div className="actions">
                       {["pending", "running"].includes(t.status) && (
                         <button
-                          disabled={mutation.isPending}
+                          disabled={actionPending}
                           onClick={() => action("cancel")}
                         >
-                          {mutation.isPending && mutation.variables === "cancel"
+                          {mutation.isPending && mutation.variables?.action === "cancel"
                             ? m.task.cancelling
                             : m.task.cancel}
                         </button>
@@ -1774,11 +1786,11 @@ export function TaskDrawer({
                         t.status,
                       ) && (
                         <button
-                          disabled={mutation.isPending}
+                          disabled={actionPending}
                           onClick={() => action("requeue")}
                         >
                           {mutation.isPending &&
-                          mutation.variables === "requeue"
+                          mutation.variables?.action === "requeue"
                             ? m.task.requeuing
                             : m.task.requeue}
                         </button>
@@ -1786,6 +1798,7 @@ export function TaskDrawer({
                       {t.status !== "running" && (
                         <button
                           className="danger-link"
+                          disabled={actionPending}
                           onClick={() => requestDelete(t.id)}
                         >
                           {m.task.delete}
@@ -1894,22 +1907,34 @@ export function DeleteDialog({
   const [operation, setOperation] = useState<BatchOperation | null>(null);
   const [error, setError] = useState("");
   const timer = useRef<number | undefined>(undefined);
+  const active = useRef(true);
+  const submitting = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [monitorError, setMonitorError] = useState(false);
 
-  const poll = async (operationId: string) => {
+  const poll = async (operationId: string, retry = false) => {
+    if (!active.current) return;
     clearTimeout(timer.current);
+    if (retry) { setError(""); setMonitorError(false); }
     try {
       const next = await api<BatchOperation>(
         `/api/webui/delete-operations/${operationId}`,
       );
+      if (!active.current) return;
       setOperation(next);
+      setMonitorError(false);
       if (!next.done) {
         timer.current = window.setTimeout(() => void poll(operationId), 350);
       }
     } catch (reason) {
+      if (!active.current) return;
       setError(reason instanceof Error ? reason.message : String(reason));
+      setMonitorError(true);
     }
   };
   const start = async () => {
+    if (submitting.current) return;
+    submitting.current = true; setBusy(true);
     setError("");
     try {
       const op = await api<BatchOperation>(
@@ -1923,10 +1948,13 @@ export function DeleteDialog({
       void poll(op.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      submitting.current = false; setBusy(false);
     }
   };
   const retryFailed = async () => {
-    if (!operation) return;
+    if (!operation || submitting.current) return;
+    submitting.current = true; setBusy(true);
     setError("");
     try {
       const retry = await api<BatchOperation>(
@@ -1937,9 +1965,27 @@ export function DeleteDialog({
       void poll(retry.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      submitting.current = false; setBusy(false);
     }
   };
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const stop = async () => {
+    if (!operation || submitting.current) return;
+    submitting.current = true; setBusy(true); setError("");
+    try {
+      const next = await api<BatchOperation>(`/api/webui/delete-operations/${operation.id}/stop`, {method: "POST"});
+      setOperation(next);
+      void poll(next.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      submitting.current = false; setBusy(false);
+    }
+  };
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; clearTimeout(timer.current); };
+  }, []);
   const selector = target.selector
     ? Object.entries(target.selector)
         .filter(([, value]) => value)
@@ -1950,7 +1996,7 @@ export function DeleteDialog({
     <Dialog.Root
       open
       onOpenChange={(open) => {
-        if (!open && !operation) close();
+        if (!open && !operation && !submitting.current) close();
       }}
     >
       <Dialog.Portal>
@@ -1978,7 +2024,8 @@ export function DeleteDialog({
           <Dialog.Description asChild>
             <p id="delete-description">{m.deletion.warning}</p>
           </Dialog.Description>
-          {error && <div className="error">{error}</div>}
+          {error && <div className="error" role="alert">{error}</div>}
+          {monitorError && operation && <p>Progress could not be refreshed. Deletion may still be running. Retry status or close and refresh the Task list.</p>}
           {operation ? (
             <>
               <div className="operation">
@@ -2031,34 +2078,31 @@ export function DeleteDialog({
                 </button>
                 {!operation.done && (
                   <button
-                    onClick={() =>
-                      void api(
-                        `/api/webui/delete-operations/${operation.id}/stop`,
-                        { method: "POST" },
-                      )
-                    }
+                    disabled={busy || operation.stopped}
+                    onClick={stop}
                   >
                     {m.deletion.stopRemaining}
                   </button>
                 )}
                 {operation.done && operation.counts.failed > 0 && (
-                  <button onClick={retryFailed}>
+                  <button disabled={busy} onClick={retryFailed}>
                     {m.deletion.retryFailed}
                   </button>
                 )}
+                {monitorError && <button disabled={busy} onClick={() => void poll(operation.id, true)}>Retry status</button>}
                 <button
                   className="primary"
-                  disabled={!operation.done}
+                  disabled={busy || (!operation.done && !monitorError)}
                   onClick={done}
                 >
-                  {m.common.done}
+                  {operation.done ? m.common.done : "Close"}
                 </button>
               </div>
             </>
           ) : (
             <div className="modal-actions">
-              <button onClick={close}>{m.common.cancel}</button>
-              <button className="danger" onClick={start}>
+              <button disabled={busy} onClick={close}>{m.common.cancel}</button>
+              <button className="danger" disabled={busy} onClick={start}>
                 {m.deletion.permanently}
               </button>
             </div>
@@ -2089,12 +2133,29 @@ export default function App() {
   const [initialStatus, setInitialStatus] = useState(
     () => new URLSearchParams(location.search).get("status") || "",
   );
+  const [historyNavigation, setHistoryNavigation] = useState(false);
+  useEffect(() => {
+    const restoreLocation = () => {
+      const url = new URLSearchParams(location.search);
+      setHistoryNavigation(true);
+      setQueue(url.get("queue"));
+      setInitialStatus(url.get("status") || "");
+    };
+    addEventListener("popstate", restoreLocation);
+    return () => removeEventListener("popstate", restoreLocation);
+  }, []);
   const [authorizationLost, setAuthorizationLost] = useState(false);
   useEffect(() => {
     const onUnauthorized = () => setAuthorizationLost(true);
     addEventListener("labtasker:unauthorized", onUnauthorized);
     return () => removeEventListener("labtasker:unauthorized", onUnauthorized);
   }, []);
+  const connected = () => {
+    // A new session may belong to another Server or credential identity.
+    // Recreate the workspace only after reading the new connection status.
+    qc.clear();
+    location.reload();
+  };
   if (status.isLoading)
     return (
       <div className="splash">
@@ -2111,12 +2172,7 @@ export default function App() {
     );
   if (!status.data?.connected)
     return (
-      <Connect
-        onDone={() => {
-          setAuthorizationLost(false);
-          qc.invalidateQueries({ queryKey: ["status"] });
-        }}
-      />
+      <Connect onDone={connected} />
     );
   if (authorizationLost) {
     if (status.data.locked) {
@@ -2131,12 +2187,7 @@ export default function App() {
       );
     }
     return (
-      <Connect
-        onDone={() => {
-          setAuthorizationLost(false);
-          void qc.invalidateQueries();
-        }}
-      />
+      <Connect onDone={connected} />
     );
   }
   const disconnect = async () => {
@@ -2154,11 +2205,13 @@ export default function App() {
     >
       {queue ? (
         <Workspace
+          key={`${status.data.server_url}/${queue}`}
           queue={queue}
           initialStatus={initialStatus}
+          historyNavigation={historyNavigation}
           server={status.data.server_url || ""}
           back={() => {
-            history.replaceState({}, "", location.pathname);
+            history.pushState({}, "", location.pathname);
             setQueue(null);
             setInitialStatus("");
           }}
@@ -2171,6 +2224,7 @@ export default function App() {
             url.searchParams.set("queue", name);
             if (s) url.searchParams.set("status", s);
             history.pushState({}, "", url);
+            setHistoryNavigation(false);
             setInitialStatus(s);
             setQueue(name);
           }}

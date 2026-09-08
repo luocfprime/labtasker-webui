@@ -17,13 +17,13 @@ export default defineConfig({
         ".venv/bin/python -m uvicorn fixture_server:app --app-dir tests --host 127.0.0.1 --port 18765",
       cwd: "..",
       url: "http://127.0.0.1:18765/health",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
     },
     {
       command: ".venv/bin/labtasker-webui --host 127.0.0.1 --port 18766 --no-profile",
       cwd: "..",
       url: "http://127.0.0.1:18766/api/webui/status",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
     },
   ],
   projects: [

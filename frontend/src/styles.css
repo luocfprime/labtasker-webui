@@ -587,7 +587,7 @@ button:disabled {
   list-style: none;
 }
 .column-menu > div {
-  position: absolute;
+  position: fixed;
   z-index: 6;
   left: 0;
   top: calc(100% + 6px);
@@ -638,7 +638,6 @@ button:disabled {
   border-radius: 3px;
   cursor: pointer;
   color: #303846;
-  text-transform: capitalize;
   font-size: var(--text-body);
 }
 .selection {
@@ -1421,7 +1420,7 @@ td code {
 }
 .column-menu > div {
   width: 370px;
-  max-width: calc(100vw - 48px);
+  max-width: calc(100vw - 24px);
   max-height: min(520px, 65dvh);
 }
 .column-list {
@@ -1611,8 +1610,10 @@ td code {
 .connect label small { display: block; margin-top: 6px; font-weight: 400; color: var(--muted); }
 /* Saved views: compact selector and contextual actions. */
 .view-selector { position: relative; }
-.view-selector.is-modified .ui-select > button { padding-right: 30px; }
-.view-dirty { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); right: 30px; top: 13px; }
+.select-value { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.select-value-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-select > button > svg { flex-shrink: 0; }
+.view-dirty { display: inline-block; flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
 .views .view-save { color: var(--blue); border-color: #a6c6ed; }
 .views .select-action { display: block; width: 100%; margin-top: 4px; border: 0; border-top: 1px solid var(--line); border-radius: 0; text-align: left; color: var(--blue); padding: 6px 8px; }
 .views-menu { width: 180px; padding: 4px; }
@@ -1636,3 +1637,29 @@ td code {
 .stats strong { color: var(--count-color); }
 .stats button:hover { background: color-mix(in srgb, var(--state) 5%, white); }
 .stats button.active { box-shadow: inset 0 -2px var(--state); background: color-mix(in srgb, var(--state) 9%, white); }
+
+.profile-save-error {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid #e3ba6c;
+  border-radius: 6px;
+  background: #fff9ed;
+  color: #624719;
+  font-size: 13px;
+}
+
+.ui-select-menu, .filter-help, .views-menu {
+  position: fixed;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.ui-select-menu [role="option"] > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-select-menu [role="option"] > span:last-child { flex-shrink: 0; }

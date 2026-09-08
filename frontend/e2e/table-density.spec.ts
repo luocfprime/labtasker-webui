@@ -45,7 +45,7 @@ test("large list virtualizes, preserves reading position, resizes columns and fo
   const taskName = page.locator("tbody .task-name").first();
   await taskName.hover();
   await expect(page.getByRole("tooltip")).toHaveText("large-task-0", { timeout: 250 });
-  await page.locator("h1").hover();
+  await page.locator(".crumb").hover();
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   const handle = page.getByRole("separator", {
     name: "Resize Task",

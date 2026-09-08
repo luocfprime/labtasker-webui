@@ -72,7 +72,14 @@ class OperationStore:
         if not unique_ids or len(unique_ids) > 1000:
             raise ValueError("A batch must contain between 1 and 1,000 unique Task IDs.")
         while len(self.items) >= self.maximum:
-            oldest = min(self.items, key=lambda key: self.items[key].updated_at)
+            completed = [key for key, item in self.items.items() if item.done]
+            if not completed:
+                raise UpstreamError(
+                    503,
+                    "operation_capacity",
+                    "Too many active delete operations. Wait for one to finish and try again.",
+                )
+            oldest = min(completed, key=lambda key: self.items[key].updated_at)
             self.items.pop(oldest, None)
         operation = Operation(
             secrets.token_urlsafe(18),

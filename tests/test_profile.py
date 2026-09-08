@@ -90,3 +90,17 @@ def test_migrates_combined_profile(tmp_path):
     assert Profile(path).data["connection"]["token"] == "old-secret"
     assert "old-secret" not in path.read_text()
     assert path.with_name("webui-token").read_text() == "old-secret"
+
+
+def test_failed_profile_write_does_not_report_unsaved_values(tmp_path, monkeypatch):
+    profile = Profile(tmp_path / "webui-profile.json")
+    profile.update_ui({"labtasker:drawerWidth": "500"})
+
+    def fail_write(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(profile, "_write", fail_write)
+    with pytest.raises(OSError, match="disk full"):
+        profile.update_ui({"labtasker:drawerWidth": "720"})
+    assert profile.data["ui"]["labtasker:drawerWidth"] == "500"
+    assert Profile(profile.path).data["ui"]["labtasker:drawerWidth"] == "500"

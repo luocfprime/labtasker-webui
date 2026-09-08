@@ -71,7 +71,6 @@ export const messages = {
     ascending: "Ascending",
     deleteAllMatching: "Delete all matching",
     resolving: "Resolving…",
-    selectAllMatching: "Select all matching",
     noFilterMatches: "No Tasks match the current filter.",
     selected: (count: number) => `${plural(count, "Task")} selected`,
     deleteSelected: "Delete selected",

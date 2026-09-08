@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 UI_KEYS = {
+    "labtasker:queueLayouts:v1",
     "labtasker:views:v1",
     "labtasker:column-widths",
     "labtasker:columns:v3",
@@ -79,5 +80,10 @@ class Profile:
     def update_ui(self, values: dict[str, str]) -> None:
         if any(key not in UI_KEYS or len(value) > 100_000 for key, value in values.items()):
             raise ValueError("Unsupported or oversized UI setting.")
-        self.data["ui"].update(values)
-        self.save()
+        previous = self.data["ui"]
+        self.data["ui"] = {**previous, **values}
+        try:
+            self.save()
+        except OSError:
+            self.data["ui"] = previous
+            raise
