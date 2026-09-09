@@ -20,12 +20,14 @@ from .schemas import (
     BatchRequest,
     ConnectRequest,
     CountResponse,
+    GroupPageResponse,
     QueueResponse,
     SelectRequest,
     TaskOrderField,
     TaskPageResponse,
     TaskResponse,
     TaskStatus,
+    WorkerPageResponse,
 )
 from .security import DestinationBlocked, validate_server_url
 from .sessions import Connection, SessionStore
@@ -299,6 +301,94 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
 
         return await asyncio.gather(*(summarize(item) for item in queue_list))
+
+    async def observation_request(conn: Connection, path: str, params: dict[str, Any]) -> Any:
+        try:
+            return await upstream.request(conn, "GET", path, params=params)
+        except UpstreamError as exc:
+            if exc.status == 404 and exc.code != "queue_not_found":
+                raise UpstreamError(
+                    501,
+                    "observations_unsupported",
+                    "This Server does not support Worker observations or route counts.",
+                ) from exc
+            raise
+
+    async def grouped_counts(
+        queue: str,
+        session_id: str | None,
+        resource: str,
+        dimensions: list[str],
+        cursor: str | None,
+        include_inactive: bool = True,
+    ) -> Any:
+        params: dict[str, Any] = {"group_by": ",".join(dimensions), "limit": 1000}
+        if cursor:
+            params["cursor"] = cursor
+        if not include_inactive:
+            params["filter"] = 'status in ["pending", "running"]'
+        value = await observation_request(
+            connection(session_id),
+            f"/api/v2/queues/{quote(queue, safe='')}/{resource}/count",
+            params,
+        )
+        if isinstance(value, dict) and set(value) == {"count"}:
+            raise UpstreamError(
+                501,
+                "observations_unsupported",
+                "This Server does not support grouped counts. Existing Task browsing is available.",
+            )
+        page = validated(value, GroupPageResponse)
+        if page["group_by"] != dimensions or any(
+            set(item["key"]) != set(dimensions) for item in page["items"]
+        ):
+            raise UpstreamError(502, "malformed_upstream", "Invalid grouped count dimensions.")
+        return page
+
+    @app.get("/api/webui/queues/{queue}/task-groups")
+    async def task_groups(
+        queue: str,
+        session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
+        cursor: str | None = None,
+        include_inactive: bool = False,
+    ) -> Any:
+        return await grouped_counts(
+            queue,
+            session_id,
+            "tasks",
+            ["routes", "status"],
+            cursor,
+            include_inactive,
+        )
+
+    @app.get("/api/webui/queues/{queue}/worker-groups")
+    async def worker_groups(
+        queue: str,
+        session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
+        cursor: str | None = None,
+    ) -> Any:
+        return await grouped_counts(queue, session_id, "workers", ["route", "status"], cursor)
+
+    @app.get("/api/webui/queues/{queue}/workers")
+    async def list_workers(
+        queue: str,
+        session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
+        cursor: str | None = None,
+        filter_expression: Annotated[str | None, Query(alias="filter")] = None,
+    ) -> Any:
+        params: dict[str, Any] = {"limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        if filter_expression:
+            params["filter"] = filter_expression
+        return validated(
+            await observation_request(
+                connection(session_id),
+                f"/api/v2/queues/{quote(queue, safe='')}/workers",
+                params,
+            ),
+            WorkerPageResponse,
+        )
 
     @app.get("/api/webui/queues/{queue}/tasks")
     async def list_tasks(

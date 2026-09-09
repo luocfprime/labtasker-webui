@@ -127,3 +127,58 @@ stops its polling; it does not cancel an operation already accepted by the backe
 The bounded operation store evicts completed records only. When all slots are active,
 new operations receive a retryable capacity error; running operations remain queryable
 and stoppable until completion.
+
+## Routes and Worker observations
+
+Each Queue has Tasks and Workers tabs and a collapsible Routes sidebar. The sidebar
+combines grouped pending/running Task routes with active Worker routes. Routes with
+only terminal Tasks and no active Workers appear when Include inactive routes is on.
+All group pages must load before absence is treated as zero. Unsupported or failed
+observation requests remain explicit; they never imply that there are zero Workers.
+Existing Task browsing remains available on Servers without grouped counts.
+
+Selecting a route intersects the Task filter with membership in `routes`, including
+status counts, and filters Workers by `route`. Route and tab navigation use browser
+history; named views include the selected route. Sidebar preferences belong to the
+connection and Queue. Task summary controls use colored numbers followed by status
+words on one line; they retain their status-filter toggle behavior.
+
+Worker state counts use grouped observations, independently of the paginated Worker
+list. Observations describe reports, not Task ownership or execution guarantees.
+Normal rows show last seen. Only after more than two 60-second reporting cycles
+without a report does the row show delayed-update and expiry information. Expiry
+uses the Server's `expires_at`; UI polling does not define the reporting interval.
+Failed list refreshes suppress expiry warnings and expose update/retry information.
+Worker IDs, routes and times retain full-value hover tooltips; associated Tasks open
+the existing detail drawer.
+
+Change opens connection settings without discarding the current workspace. Back to
+workspace restores it; a successful connection change clears the query cache.
+
+The compact Task summary begins with All, the sum across the five mutually exclusive
+statuses under the applied name, expression and route filters. Selecting All clears
+only the Status selector. Task and Worker summary controls use a quiet rounded
+selection fill. Worker Idle counts are green and Busy counts are blue. Worker status
+selection uses the same styled, keyboard-accessible control as Task filters.
+
+The workspace uses a white surface, medium-weight linked Task names, colored status
+labels and row separators, without nested toolbar/table frames. Route collapse has
+an explicit button and a 140 ms layout transition, disabled for reduced motion.
+Route dots in the sidebar and Task/Worker tables describe current route observations:
+blue for Busy Workers, green for Idle Workers, amber for pending/running Tasks without
+active Workers, gray for inactive routes, and a hollow gray dot when counts are unknown.
+Busy takes precedence over Idle when both are present. A route dot does not describe
+the individual Task's status; each Task keeps its own separate status label.
+
+The Routes divider supports pointer dragging and Left/Right keyboard adjustments.
+Width is stored per connection and Queue, including across collapse and reload.
+The sidebar is bounded to 160–480 px and at most 40% of the viewport. Dragging has
+no layout animation; collapse keeps its short transition. On narrow screens the
+Routes section stacks above content and its horizontal resize handle is hidden.
+
+Task-name search has a 240 px preferred width and expands to its grid cell on narrow
+screens. The Routes toggle stays beside the breadcrumb in both sidebar states. The sidebar
+starts directly with All routes, aligned with the 36 px Task/Worker tab row; there
+is no separate sidebar title or collapse button in the tab row. Selected status
+summaries use a pale version of their status color with matching label text; All uses
+neutral charcoal and a pale gray background. Typography uses 13 px controls, 12 px summary labels and 24 px count numerals.

@@ -1,0 +1,30 @@
+import {expect, test} from '@playwright/test';
+
+test('Routes divider resizes immediately and preserves width through collapse and reload', async ({page}) => {
+  await page.setViewportSize({width:1440,height:900});
+  await page.request.post('http://127.0.0.1:18765/__test__/reset');
+  await page.goto('/');
+  await page.getByLabel('Server URL').fill('http://127.0.0.1:18765');
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await page.getByRole('heading',{name:'robotwin',exact:true}).click();
+  const divider = page.getByRole('separator',{name:'Resize sidebar'});
+  await expect(divider).toBeVisible();
+  const start = (await divider.boundingBox())!;
+  const rail = page.locator('.route-rail');
+  const width = (await rail.boundingBox())!.width;
+  await page.mouse.move(start.x+start.width/2,start.y+100);
+  await page.mouse.down();
+  await page.mouse.move(start.x+start.width/2+80,start.y+100);
+  await expect.poll(async () => (await rail.boundingBox())!.width).toBeCloseTo(width+80,0);
+  await page.mouse.up();
+  await page.getByRole('button',{name:'Collapse Routes'}).click();
+  await page.getByRole('button',{name:'Show Routes'}).click();
+  await expect.poll(async () => (await rail.boundingBox())!.width).toBeCloseTo(width+80,0);
+  await page.reload();
+  await expect.poll(async () => (await rail.boundingBox())!.width).toBeCloseTo(width+80,0);
+  await divider.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(divider).toHaveAttribute('aria-valuenow',String(width+90));
+  await page.setViewportSize({width:500,height:800});
+  await expect(divider).not.toBeVisible();
+});

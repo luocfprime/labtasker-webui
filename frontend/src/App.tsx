@@ -1,5 +1,9 @@
+import { workspacePreferences, saveWorkspacePreferences } from "./workspacePreferences";
+import { api, ApiRequestError } from "./api";
+import { RouteSidebar, RouteChips, RouteCountsContext, WorkersPanel, useRouteCounts } from "./Observations";
+import { effectiveTaskFilter } from "./countFilters";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   useInfiniteQuery,
   useIsMutating,
@@ -23,7 +27,7 @@ import { statusCountParams } from "./countFilters";
 import { Views } from "./Views";
 import { Select } from "./Select";
 import { messages as m } from "./messages";
-import { observeVersionHeaders, ServerVersionWarning } from "./ServerVersionWarning";
+import { ServerVersionWarning } from "./ServerVersionWarning";
 
 export function PriorityValue({ value }: { value: number }) {
   return (
@@ -94,21 +98,8 @@ type BatchOperation = {
   counts: Record<"deleted" | "absent" | "failed" | "stopped", number>;
   outcomes: BatchOutcome[];
 };
-type ApiError = {
-  error?: { code: string; message: string; details?: unknown };
-  detail?: unknown;
-};
-class ApiRequestError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code: string,
-    readonly details: unknown,
-  ) {
-    super(message);
-  }
-}
 type Filters = {
+  route?: string;
   status: string;
   name: string;
   filter: string;
@@ -118,6 +109,7 @@ type Filters = {
 function filtersFromUrl(): Filters {
   const url = new URLSearchParams(location.search);
   return {
+    route: url.get("route") || "",
     status: url.get("status") || "",
     name: url.get("name") || "",
     filter: url.get("filter") || "",
@@ -126,7 +118,7 @@ function filtersFromUrl(): Filters {
   };
 }
 function sameFilters(a: Filters, b: Filters) {
-  return (Object.keys(a) as (keyof Filters)[]).every(key => a[key] === b[key]);
+  return (["status", "name", "filter", "order_by", "descending"] as const).every(key => a[key] === b[key]) && (a.route || "") === (b.route || "");
 }
 const statuses: Status[] = [
   "pending",
@@ -156,38 +148,6 @@ export const adaptivePolling =
     );
   };
 
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-  });
-  observeVersionHeaders(response.headers);
-  if (!response.ok) {
-    let body: ApiError = {};
-    try {
-      body = await response.json();
-    } catch {}
-    const message =
-      body.error?.message ||
-      (typeof body.detail === "string"
-        ? body.detail
-        : m.errors.requestFailed(response.status));
-    if (
-      response.status === 401 &&
-      !url.endsWith("/status") &&
-      !url.endsWith("/connect")
-    ) {
-      dispatchEvent(new CustomEvent("labtasker:unauthorized"));
-    }
-    throw new ApiRequestError(
-      message,
-      response.status,
-      body.error?.code || "request_failed",
-      body.error?.details || body.detail,
-    );
-  }
-  return response.status === 204 ? (undefined as T) : response.json();
-}
 function notify(message: string) {
   const element = document.getElementById("toast");
   if (!element) return;
@@ -354,10 +314,10 @@ function Empty({ title, body }: { title: string; body: string }) {
   );
 }
 
-export function Connect({ onDone }: { onDone: () => void }) {
-  const [mode, setMode] = useState("http");
-  const [directory, setDirectory] = useState(".");
-  const [serverUrl, setServerUrl] = useState("http://127.0.0.1:8000");
+export function Connect({ onDone, onCancel, initialServer = "" }: { onDone: () => void; onCancel?: () => void; initialServer?: string }) {
+  const [mode, setMode] = useState(initialServer.startsWith("local:") ? "local" : "http");
+  const [directory, setDirectory] = useState(initialServer.startsWith("local:") ? initialServer.slice(6) : ".");
+  const [serverUrl, setServerUrl] = useState(initialServer && !initialServer.startsWith("local:") ? initialServer : "http://127.0.0.1:8000");
   const [token, setToken] = useState("");
   const mutation = useMutation({
     mutationFn: () =>
@@ -370,6 +330,7 @@ export function Connect({ onDone }: { onDone: () => void }) {
   return (
     <main className="connect">
       <section className="connect-card">
+        {onCancel && <button className="link" onClick={onCancel}>Back to workspace</button>}
         <Brand />
         <div className="connect-copy">
           <h1>{m.connect.title}</h1>
@@ -627,16 +588,34 @@ function Workspace({
 }) {
   const qc = useQueryClient();
   const scope = `${server}/${queue}`;
+  const [preferences, setPreferences] = useState(() => workspacePreferences(scope));
+  const [resizingRoutes, setResizingRoutes] = useState(false);
+  const routeDrag = useRef<{x: number; width: number} | null>(null);
+  const resizeRoutes = (width: number) => setPreferences(current => ({...current,
+    width: Math.round(Math.max(160, Math.min(480, window.innerWidth * .4, width)))}));
+  useEffect(() => {saveWorkspacePreferences(scope, preferences);}, [scope, preferences]);
+  const [tab, setTab] = useState(() => new URLSearchParams(location.search).get("tab") === "workers" ? "workers" : "tasks");
+  const [workerStatus, setWorkerStatus] = useState(() => new URLSearchParams(location.search).get("worker_status") || "");
+  const routeCounts = useRouteCounts(queue, server, preferences.inactive);
+  const navigatePanel = (nextTab: string, nextStatus = workerStatus) => {
+    const url = new URL(location.href);
+    if (nextTab === "workers") url.searchParams.set("tab", "workers"); else url.searchParams.delete("tab");
+    if (nextStatus) url.searchParams.set("worker_status", nextStatus); else url.searchParams.delete("worker_status");
+    url.searchParams.delete("task");
+    history.pushState({}, "", url);
+    setTab(nextTab); setWorkerStatus(nextStatus); setTaskId(null);
+  };
   const [initialLayout] = useState(() => readQueueLayout(scope));
   const [filters, setFilters] = useState<Filters>(() => {
     const url = new URLSearchParams(location.search);
-    if (!historyNavigation && !initialStatus && !["status", "name", "filter", "order_by", "descending"].some((key) => url.has(key))) {
+    if (!historyNavigation && !initialStatus && !["route", "status", "name", "filter", "order_by", "descending"].some((key) => url.has(key))) {
       try {
         const saved = JSON.parse(localStorage.getItem("labtasker:filters:v1") || "{}")[`${server}/${queue}`];
         if (saved && ["status", "name", "filter", "order_by"].every((key) => typeof saved[key] === "string") && typeof saved.descending === "boolean") return saved;
       } catch {}
     }
     return {
+      route: url.get("route") || "",
       status: url.get("status") || initialStatus,
       name: url.get("name") || "",
       filter: url.get("filter") || "",
@@ -777,11 +756,14 @@ function Workspace({
   const [confirm, setConfirm] = useState<DeleteTarget | null>(null);
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
-    if (v !== "" && k !== "descending") params.set(k === "name" ? "name_fuzzy" : k, String(v));
+    if (v !== "" && v !== undefined && k !== "descending" && k !== "route") params.set(k === "name" ? "name_fuzzy" : k, String(v));
   });
+  const effectiveFilter = effectiveTaskFilter(filters);
+  if (effectiveFilter) params.set("filter", effectiveFilter);
   params.set("descending", String(filters.descending));
   const tasks = useInfiniteQuery({
     queryKey: ["tasks", queue, filters],
+    enabled: tab === "tasks",
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => {
       const pageParams = new URLSearchParams(params);
@@ -795,7 +777,7 @@ function Workspace({
         ? page.next_cursor
         : undefined,
     refetchInterval:
-      viewport.top > 0 || taskId ? false : adaptivePolling(5_000),
+      tab !== "tasks" || viewport.top > 0 || taskId ? false : adaptivePolling(5_000),
     refetchOnWindowFocus: viewport.top === 0 && !taskId,
   });
   useEffect(() => {
@@ -834,7 +816,8 @@ function Workspace({
     }
   }, [tasks.error, back]);
   const queueCounts = useQuery<Record<Status, number>>({
-    queryKey: ["queue-counts", queue, filters.name, filters.filter],
+    queryKey: ["queue-counts", queue, filters.name, filters.filter, filters.route],
+    enabled: tab === "tasks",
     queryFn: async () => {
       const values = await Promise.all(
         statuses.map((status) => {
@@ -853,11 +836,13 @@ function Workspace({
   const countParams = new URLSearchParams();
   if (filters.status) countParams.set("status", filters.status);
   if (filters.name) countParams.set("name_fuzzy", filters.name);
-  if (filters.filter) countParams.set("filter", filters.filter);
+  if (effectiveFilter) countParams.set("filter", effectiveFilter);
   const matchingCount = useQuery<{ count: number }>({
+    enabled: tab === "tasks",
     queryKey: [
       "matching-count",
       queue,
+      filters.route,
       filters.status,
       filters.name,
       filters.filter,
@@ -885,11 +870,12 @@ function Workspace({
       "order_by",
       "descending",
       "cursor",
+      "route",
     ]) {
       url.searchParams.delete(key);
     }
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== "" && !(key === "order_by" && value === "created_at")) {
+      if (value !== "" && value !== undefined && !(key === "order_by" && value === "created_at")) {
         url.searchParams.set(key, String(value));
       }
     });
@@ -900,6 +886,8 @@ function Workspace({
     const onBack = () => {
       const url = new URLSearchParams(location.search);
       if (url.get("queue") !== queue) return;
+      setTab(url.get("tab") === "workers" ? "workers" : "tasks");
+      setWorkerStatus(url.get("worker_status") || "");
       const restored = filtersFromUrl();
       if (!sameFilters(filters, restored)) {
         setFilters(restored);
@@ -922,7 +910,7 @@ function Workspace({
   const apply = () => {
     if (sameFilters(filters, draft)) return;
     setFilters(draft);
-    if (["status", "name", "filter"].some(key => filters[key as keyof Filters] !== draft[key as keyof Filters])) setSelected(new Set());
+    if (["route", "status", "name", "filter"].some(key => filters[key as keyof Filters] !== draft[key as keyof Filters])) setSelected(new Set());
   };
   const applyFields = (values: Partial<Filters>) => {
     setDraft(current => ({ ...current, ...values }));
@@ -930,7 +918,7 @@ function Workspace({
       const next = { ...current, ...values };
       return sameFilters(current, next) ? current : next;
     });
-    if (Object.entries(values).some(([key, value]) => ["status", "name", "filter"].includes(key) && filters[key as keyof Filters] !== value)) setSelected(new Set());
+    if (Object.entries(values).some(([key, value]) => ["route", "status", "name", "filter"].includes(key) && filters[key as keyof Filters] !== value)) setSelected(new Set());
   };
   const all = useMemo(() => {
     if (!tasks.data) return EMPTY_TASKS;
@@ -1032,11 +1020,7 @@ function Workspace({
         size: 180,
         header: m.columns.routes,
         cell: ({ row }) => (
-          <div className="chips" data-tooltip={row.original.routes.join("\n")}>
-            {row.original.routes.map((route) => (
-              <span key={route}>{route}</span>
-            ))}
-          </div>
+<RouteChips routes={row.original.routes} />
         ),
       },
       {
@@ -1161,29 +1145,72 @@ function Workspace({
   return (
     <main className="workspace">
       <div className="queue-navigation">
+      <div className="queue-location">
+      <button className="routes-toggle" aria-label={preferences.collapsed ? "Show Routes" : "Collapse Routes"}
+        aria-expanded={!preferences.collapsed} aria-controls="queue-routes" data-tooltip={preferences.collapsed ? "Show Routes" : "Collapse Routes"}
+        onClick={() => setPreferences(current => ({...current, collapsed: !current.collapsed}))}>
+        <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="2" fill="none" stroke="currentColor"/><path d="M7 3v14" fill="none" stroke="currentColor"/>{!preferences.collapsed && <path d="M3 4h3v12H3z" fill="currentColor" opacity=".2"/>}</svg>
+        Routes
+      </button>
       <nav className="crumb" aria-label="Breadcrumb">
         <button onClick={back}>{m.workspace.allQueues}</button>
         <span aria-hidden="true">/</span>
         <b aria-current="page">{queue}</b>
       </nav>
+      </div>
       <div className="queue-navigation-actions">
         <Views key={`${server}/${queue}`} scope={`${server}/${queue}`}
           current={{filters, visible: [...visibleColumns], custom: customPaths, order: savedOrder, widths: columnSizing}}
           apply={view => {
-            setFilters(view.filters); setDraft(view.filters); setVisibleColumns(new Set(view.visible));
+            setFilters({...view.filters, route: view.filters.route || ""}); setDraft({...view.filters, route: view.filters.route || ""}); setVisibleColumns(new Set(view.visible));
             setCustomPaths(view.custom.filter(path => pathParts(path))); setSavedOrder(view.order); setColumnSizing(view.widths);
             setSelected(new Set()); setTaskId(null);
           }} />
-        <button className="secondary" onClick={refreshList}>
+        <button className="secondary" onClick={() => {refreshList(); void routeCounts.tasks.refetch(); void routeCounts.workers.refetch(); void qc.invalidateQueries({queryKey: ["workers", server, queue]});}}>
           {tasks.isFetching && <Spinner />} {m.common.refresh}
         </button>
       </div>
       </div>
-      <div className="stats">
+      <RouteCountsContext.Provider value={routeCounts}><div className={`queue-workspace${preferences.collapsed ? " routes-collapsed" : ""}${resizingRoutes ? " resizing-routes" : ""}`} style={{"--route-preferred-width": `${preferences.width}px`} as CSSProperties}>
+        <div id="queue-routes" className="route-rail" aria-hidden={preferences.collapsed} inert={preferences.collapsed}><RouteSidebar counts={routeCounts} route={filters.route || ""}
+          choose={route => {applyFields({route}); setTaskId(null);}}
+          inactive={preferences.inactive} setInactive={inactive => setPreferences(current => ({...current, inactive}))} />
+          <div className="route-resizer" role="separator" aria-label="Resize sidebar" aria-orientation="vertical"
+            aria-valuemin={160} aria-valuemax={480} aria-valuenow={preferences.width} tabIndex={preferences.collapsed ? -1 : 0}
+            onPointerDown={event => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              routeDrag.current = {x: event.clientX, width: event.currentTarget.parentElement!.getBoundingClientRect().width};
+              event.currentTarget.setPointerCapture(event.pointerId); setResizingRoutes(true);
+            }}
+            onPointerMove={event => {if (routeDrag.current) resizeRoutes(routeDrag.current.width + event.clientX - routeDrag.current.x);}}
+            onPointerUp={event => {routeDrag.current = null; setResizingRoutes(false); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);}}
+            onPointerCancel={() => {routeDrag.current = null; setResizingRoutes(false);}}
+            onLostPointerCapture={() => {routeDrag.current = null; setResizingRoutes(false);}}
+            onKeyDown={event => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault(); resizeRoutes(event.key === "Home" ? 160 : event.key === "End" ? 480 : preferences.width + (event.key === "ArrowRight" ? 10 : -10));
+            }} />
+        </div>
+        <div className="workspace-content">
+          <div className="workspace-tabs">
+            <button aria-pressed={tab === "tasks"} onClick={() => navigatePanel("tasks")}>Tasks</button>
+            <button aria-pressed={tab === "workers"} onClick={() => navigatePanel("workers")}>Workers</button>
+            {filters.route && <span className="active-route" data-tooltip={filters.route}>{filters.route}</span>}
+          </div>
+          {tab === "workers" && <WorkersPanel queue={queue} server={server} route={filters.route || ""} counts={routeCounts}
+            status={workerStatus} setStatus={value => navigatePanel("workers", value)} openTask={openTask} />}
+          <div className="task-workspace" hidden={tab !== "tasks"}>
+      <div className="stats" aria-label="Task status counts">
+        <button className={`all${!filters.status ? " active" : ""}`} aria-pressed={!filters.status}
+          data-tooltip="Show Tasks in all statuses" onClick={() => applyFields({status: ""})}>
+          <strong>{queueCounts.data && !queueCounts.isError ? statuses.reduce((sum, status) => sum + queueCounts.data[status], 0) : "—"}</strong><span>All</span>
+        </button>
         {statuses.map((s) => (
           <button
             className={`${s}${filters.status === s ? " active" : ""}`}
             aria-pressed={filters.status === s}
+            data-tooltip={`Filter ${m.status[s]} Tasks`}
             key={s}
             onClick={() => {
               const f = { ...filters, status: filters.status === s ? "" : s };
@@ -1192,8 +1219,8 @@ function Workspace({
               setSelected(new Set());
             }}
           >
-            <span>{m.status[s]}</span>
             <strong>{queueCounts.isError ? "—" : queueCounts.data?.[s] ?? "—"}</strong>
+            <span>{m.status[s]}</span>
           </button>
         ))}
       </div>
@@ -1202,6 +1229,7 @@ function Workspace({
           onChange={(status) => applyFields({ status })}
           options={[{value: "", label: m.workspace.allStatuses}, ...statuses.map((s) => ({value: s, label: m.status[s]}))]} />
         <input
+          className="task-name-filter"
           aria-label={m.workspace.taskName}
           onBlur={event => applyFields({ name: event.currentTarget.value })}
           onKeyDown={event => {
@@ -1500,6 +1528,10 @@ function Workspace({
           matchingCount.data?.count ?? "—",
         )}
       </div>
+          </div>
+        </div>
+      </div>
+      </RouteCountsContext.Provider>
       {taskId && (
         <TaskDrawer
           queue={queue}
@@ -2147,6 +2179,7 @@ export default function App() {
     addEventListener("popstate", restoreLocation);
     return () => removeEventListener("popstate", restoreLocation);
   }, []);
+  const [changingConnection, setChangingConnection] = useState(false);
   const [authorizationLost, setAuthorizationLost] = useState(false);
   useEffect(() => {
     const onUnauthorized = () => setAuthorizationLost(true);
@@ -2193,18 +2226,15 @@ export default function App() {
       <Connect onDone={connected} />
     );
   }
-  const disconnect = async () => {
-    await api("/api/webui/connect", { method: "DELETE" });
-    setQueue(null);
-    qc.clear();
-    location.reload();
-  };
   return (
+    <>
+    {changingConnection && <Connect onDone={connected} onCancel={() => setChangingConnection(false)} initialServer={status.data.server_url || ""} />}
+    <div hidden={changingConnection}>
     <Shell
       server={status.data.server_url || ""}
       locked={status.data.locked}
       allowDisconnect={true}
-      onDisconnect={disconnect}
+      onDisconnect={() => setChangingConnection(true)}
     >
       <ServerVersionWarning />
       {queue ? (
@@ -2235,5 +2265,7 @@ export default function App() {
         />
       )}
     </Shell>
+    </div>
+    </>
   );
 }

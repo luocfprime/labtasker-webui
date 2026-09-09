@@ -79,3 +79,30 @@ class TaskPageResponse(BaseModel):
 
 class CountResponse(BaseModel):
     count: int = Field(ge=0)
+
+
+class WorkerResponse(BaseModel):
+    id: str
+    queue: str
+    route: str
+    status: Literal["idle", "busy"]
+    task_id: str | None
+    last_seen_at: datetime
+    expires_at: datetime
+
+
+class WorkerPageResponse(BaseModel):
+    items: list[WorkerResponse]
+    next_cursor: str | None
+
+
+class CountGroupResponse(BaseModel):
+    key: dict[str, str]
+    count: int = Field(ge=1)
+
+
+class GroupPageResponse(BaseModel):
+    group_by: list[str]
+    count: int = Field(ge=0)
+    items: list[CountGroupResponse]
+    next_cursor: str | None

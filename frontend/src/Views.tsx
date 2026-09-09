@@ -5,7 +5,7 @@ import { useAnchoredPanel } from "./useAnchoredPanel";
 import { Select } from "./Select";
 
 export type ViewState = {
-  filters: {status: string; name: string; filter: string; order_by: string; descending: boolean};
+  filters: {status: string; name: string; filter: string; order_by: string; descending: boolean; route?: string};
   visible: string[]; custom: string[]; order: string[]; widths: Record<string, number>;
 };
 type View = {id: string; name: string; state: ViewState};
@@ -22,7 +22,7 @@ function read(scope: string): Collection {
     return typeof v?.id === "string" && typeof v.name === "string" && s &&
       [s.visible, s.custom, s.order].every(a => Array.isArray(a) && a.every(x => typeof x === "string")) &&
       s.filters && ["status", "name", "filter", "order_by"].every(k => typeof (s.filters as Record<string, unknown>)[k] === "string") &&
-      typeof s.filters.descending === "boolean" && s.widths && typeof s.widths === "object" &&
+      (s.filters.route === undefined || typeof s.filters.route === "string") && typeof s.filters.descending === "boolean" && s.widths && typeof s.widths === "object" &&
       Object.values(s.widths).every(w => typeof w === "number" && w >= 60 && w <= 10000);
   })};
 }

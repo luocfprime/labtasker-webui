@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 UI_KEYS = {
+    "labtasker:workspace:v1",
     "labtasker:queueLayouts:v1",
     "labtasker:views:v1",
     "labtasker:column-widths",
