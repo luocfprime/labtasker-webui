@@ -20,7 +20,7 @@ test("scroll appends pages, preserves selection, deduplicates and resets filters
   let updated = false;
   await page.route("**/api/webui/queues/robotwin/tasks?*", async (route) => {
     const url = new URL(route.request().url());
-    if (url.searchParams.get("name") === "filtered") {
+    if (url.searchParams.get("name_fuzzy") === "filtered") {
       await route.fulfill({
         json: {
           items: [{ ...makeTask(99), name: "filtered-task" }],

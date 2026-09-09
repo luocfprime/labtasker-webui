@@ -116,6 +116,7 @@ def queues() -> list[dict[str, str]]:
 def list_tasks(
     status: str | None = None,
     name: str | None = None,
+    name_fuzzy: str | None = None,
     limit: int = 100,
     filter: str | None = None,
     order_by: str = "created_at",
@@ -127,14 +128,27 @@ def list_tasks(
         items = [item for item in items if item["status"] == status]
     if name:
         items = [item for item in items if item["name"] == name]
+    if name_fuzzy:
+
+        def matches(name: object) -> bool:
+            for word in name_fuzzy.casefold().split():
+                letters = iter(str(name or "").casefold())
+                if not all(character in letters for character in word):
+                    return False
+            return True
+
+        items = [item for item in items if matches(item["name"])]
     return {"items": items[:limit], "next_cursor": None}
 
 
 @app.get("/api/v2/queues/{queue}/tasks/count")
 def count_tasks(
-    status: str | None = None, name: str | None = None, filter: str | None = None
+    status: str | None = None,
+    name: str | None = None,
+    filter: str | None = None,
+    name_fuzzy: str | None = None,
 ) -> dict[str, int]:
-    return {"count": len(list_tasks(status, name)["items"])}
+    return {"count": len(list_tasks(status=status, name=name, name_fuzzy=name_fuzzy)["items"])}
 
 
 @app.get("/api/v2/queues/{queue}/tasks/{task_id}")

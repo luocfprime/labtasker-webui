@@ -53,6 +53,22 @@ what the user is reading. Refresh explicitly returns to the top and refreshes da
 Resizing uses per-column widths and a filler for remaining space. JSON paths are read-only
 lookups; missing fields are blank.
 
+The Task name input uses the upstream `name_fuzzy` selector: case-insensitive
+Unicode subsequences, split on whitespace, with every word required and word
+order unrestricted. Empty or whitespace-only searches add no restriction.
+Punctuation is literal; no fzf extended operators or relevance sorting are added.
+Text applies on Enter or blur, respecting IME composition. Exact lookup remains
+available as `name == "..."` in Advanced filter. The URL and saved-view `name`
+field store this input; previously saved name inputs now use fuzzy matching.
+
+The BFF forwards `name_fuzzy` on list, count, and deletion-snapshot requests to
+the Server. It does not filter loaded Tasks in the browser. Status cards ignore
+the Status dropdown but retain name search and advanced filter; list totals use
+all applied selectors. The existing selected-ID deletion UI is unchanged.
+The snapshot endpoint requires at least one effective selector; whitespace-only
+fuzzy input alone is insufficient. The upstream Server must support `name_fuzzy`;
+there is no browser-only matching fallback.
+
 Advanced filter help provides ten built-in examples covering routes, status, priority,
 attempts, errors and custom fields. Route examples use exact-name array membership
 (`"gpu-a100" in routes` and `"gpu-a100" not in routes`); combine checks with

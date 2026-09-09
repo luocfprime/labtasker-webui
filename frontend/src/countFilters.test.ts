@@ -10,7 +10,7 @@ it("counts each status within the applied expression and name", () => {
   const params = statusCountParams(filters, "succeeded");
   expect(params.get("status")).toBe("succeeded");
   expect(params.get("filter")).toBe(filters.filter);
-  expect(params.get("name")).toBe("a&b");
+  expect(params.get("name_fuzzy")).toBe("a&b");
 });
 
 it("ignores the selected list status when counting other statuses", () => {

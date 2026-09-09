@@ -29,6 +29,7 @@ class ConnectRequest(BaseModel):
 class SelectRequest(BaseModel):
     status: TaskStatus | None = None
     name: str | None = None
+    name_fuzzy: str | None = None
     filter: str | None = None
 
 

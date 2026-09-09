@@ -296,6 +296,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
         status: TaskStatus | None = None,
         name: str | None = None,
+        name_fuzzy: str | None = None,
         filter_expression: Annotated[str | None, Query(alias="filter")] = None,
         order_by: TaskOrderField = "created_at",
         descending: bool = True,
@@ -308,6 +309,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for k, v in {
                     "status": status,
                     "name": name,
+                    "name_fuzzy": name_fuzzy,
                     "filter": filter_expression,
                     "cursor": cursor,
                 }.items()
@@ -330,11 +332,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
         status: TaskStatus | None = None,
         name: str | None = None,
+        name_fuzzy: str | None = None,
         filter_expression: Annotated[str | None, Query(alias="filter")] = None,
     ) -> Any:
         params = {
             k: v
-            for k, v in {"status": status, "name": name, "filter": filter_expression}.items()
+            for k, v in {
+                "status": status,
+                "name": name,
+                "name_fuzzy": name_fuzzy,
+                "filter": filter_expression,
+            }.items()
             if v
         }
         return validated(
@@ -384,7 +392,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         selector: SelectRequest,
         session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
     ) -> dict[str, Any]:
-        if not any([selector.status, selector.name, selector.filter and selector.filter.strip()]):
+        if not any(
+            [
+                selector.status,
+                selector.name,
+                selector.name_fuzzy and selector.name_fuzzy.strip(),
+                selector.filter and selector.filter.strip(),
+            ]
+        ):
             raise HTTPException(
                 422,
                 {
@@ -398,6 +413,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for k, v in {
                 "status": selector.status,
                 "name": selector.name,
+                "name_fuzzy": selector.name_fuzzy,
                 "filter": selector.filter,
             }.items()
             if v

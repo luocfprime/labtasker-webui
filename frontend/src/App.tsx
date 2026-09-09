@@ -775,7 +775,7 @@ function Workspace({
   const [confirm, setConfirm] = useState<DeleteTarget | null>(null);
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
-    if (v !== "" && k !== "descending") params.set(k, String(v));
+    if (v !== "" && k !== "descending") params.set(k === "name" ? "name_fuzzy" : k, String(v));
   });
   params.set("descending", String(filters.descending));
   const tasks = useInfiniteQuery({
@@ -850,7 +850,7 @@ function Workspace({
   });
   const countParams = new URLSearchParams();
   if (filters.status) countParams.set("status", filters.status);
-  if (filters.name) countParams.set("name", filters.name);
+  if (filters.name) countParams.set("name_fuzzy", filters.name);
   if (filters.filter) countParams.set("filter", filters.filter);
   const matchingCount = useQuery<{ count: number }>({
     queryKey: [
@@ -1209,7 +1209,8 @@ function Workspace({
           }}
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          placeholder={m.workspace.taskName}
+          title='Case-insensitive subsequence search; every word must match. For an exact name, use name == "..." in Advanced filter.'
+          placeholder="Task name · fuzzy search"
         />
         <FilterInput label={m.workspace.advancedFilter} value={draft.filter} onApply={apply} onCommit={filter => applyFields({ filter })}
           onChange={(filter) => setDraft({ ...draft, filter })} />
