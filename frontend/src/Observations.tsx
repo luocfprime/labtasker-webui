@@ -55,7 +55,7 @@ export function RouteSidebar({counts, route, choose, inactive, setInactive}: {
       </button>)}
       {(counts.tasks.isLoading || counts.workers.isLoading) && <small>Loading routes…</small>}
     </div>
-    <label className="inactive-routes"><input type="checkbox" checked={inactive} onChange={event => setInactive(event.target.checked)} /> Include inactive routes</label>
+    <label className="inactive-routes"><span>Inactive routes</span><input type="checkbox" aria-label="Include inactive routes" checked={inactive} onChange={event => setInactive(event.target.checked)} /><span className="inactive-switch" aria-hidden="true" /></label>
     <ObservationError error={counts.tasks.error} updatedAt={counts.tasks.dataUpdatedAt} retry={() => void counts.tasks.refetch()} />
     <ObservationError error={counts.workers.error} updatedAt={counts.workers.dataUpdatedAt} retry={() => void counts.workers.refetch()} />
   </aside>;
@@ -122,4 +122,17 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
     </div>
     <div className="list-summary">{rows.length} loaded · {list.dataUpdatedAt ? `Updated ${new Date(list.dataUpdatedAt).toLocaleTimeString()}` : "Waiting for observations"}</div>
   </section>;
+}
+
+export function QueueWorkerSummary({queue, server}: {queue: string; server: string}) {
+  const {workers, tasks, rows} = useRouteCounts(queue, server, false);
+  const count = (status: string) => workers.data?.filter(g => g.key.status === status).reduce((n, g) => n + g.count, 0) ?? 0;
+  const routesKnown = workers.data && tasks.data && !workers.error && !tasks.error;
+  const busy = rows.filter(row => row.busy > 0).length;
+  const idle = rows.filter(row => !row.busy && row.idle > 0).length;
+  const waiting = rows.filter(row => !row.busy && !row.idle && row.pending + row.running > 0).length;
+  return <div className="queue-observation-summary">
+    <div className="queue-worker-summary"><span>Workers</span>{workers.error ? <span>Unavailable</span> : !workers.data ? <span>Loading…</span> : <><span className="queue-worker-busy"><b>{count("busy")}</b> Busy</span><span className="queue-worker-idle"><b>{count("idle")}</b> Idle</span></>}</div>
+    <div className="queue-route-summary"><span>Routes</span>{!routesKnown ? <span>{workers.error || tasks.error ? "Unavailable" : "Loading…"}</span> : <><span className="queue-route-waiting" data-tooltip="Task demand without active Workers"><b>{waiting}</b> Waiting</span><span className="queue-worker-busy" data-tooltip="Routes with Busy Workers"><b>{busy}</b> Busy</span>{idle > 0 && <span className="queue-worker-idle" data-tooltip="Routes with Idle Workers and no Busy Workers"><b>{idle}</b> Idle</span>}</>}</div>
+  </div>;
 }

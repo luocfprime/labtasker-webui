@@ -182,3 +182,15 @@ starts directly with All routes, aligned with the 36 px Task/Worker tab row; the
 is no separate sidebar title or collapse button in the tab row. Selected status
 summaries use a pale version of their status color with matching label text; All uses
 neutral charcoal and a pale gray background. Typography uses 13 px controls, 12 px summary labels and 24 px count numerals.
+
+Queue overview cards use a compact layout capped at 460 px, with the Queue name,
+total Task count, colored status counts, and a thin proportional status distribution
+bar. Status controls retain navigation to the selected status and wrap on narrow
+screens. They have padded hover targets and offset keyboard focus outlines. The
+cards show completed/total Tasks and completion percentage below the bar, and compact
+Worker and Route summaries in the footer. Status numbers use five aligned columns.
+Route counts are distinct routes, classified Busy before Idle before Waiting; Waiting
+means pending/running Task demand without active Workers. Inactive routes are omitted. Worker counts come from paginated Worker
+groups, refreshed every 15 seconds; loading or unavailable observations never display
+as zero. Completion includes succeeded, failed and cancelled Tasks. Failure rate and
+recent Task details are omitted; individual Tasks remain available inside the Queue.

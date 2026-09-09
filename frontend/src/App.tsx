@@ -1,6 +1,6 @@
 import { workspacePreferences, saveWorkspacePreferences } from "./workspacePreferences";
 import { api, ApiRequestError } from "./api";
-import { RouteSidebar, RouteChips, RouteCountsContext, WorkersPanel, useRouteCounts } from "./Observations";
+import { QueueWorkerSummary, RouteSidebar, RouteChips, RouteCountsContext, WorkersPanel, useRouteCounts } from "./Observations";
 import { effectiveTaskFilter } from "./countFilters";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -452,8 +452,10 @@ function Shell({
 }
 
 function Overview({
+  server,
   openQueue,
 }: {
+  server: string;
   openQueue: (name: string, status?: string) => void;
 }) {
   const query = useQuery<QueueSummary[]>({
@@ -494,76 +496,44 @@ function Overview({
         <div className="queue-grid">
           {query.data.map((q) => {
             const n = Object.values(q.counts).reduce((a, b) => a + b, 0);
-            const done =
-              q.counts.succeeded + q.counts.failed + q.counts.cancelled;
-            const rate = n ? Math.round((done / n) * 100) : null;
-            const attempted = q.counts.succeeded + q.counts.failed;
-            const failureRate = attempted
-              ? Math.round((q.counts.failed / attempted) * 100)
-              : null;
+            const done = q.counts.succeeded + q.counts.failed + q.counts.cancelled;
+            const completion = n ? Math.round(done / n * 100) : null;
             return (
               <article
                 className="queue-card"
                 key={q.name}
                 onClick={() => openQueue(q.name)}
                 tabIndex={0}
-                onKeyDown={(e) => e.key === "Enter" && openQueue(q.name)}
+                onKeyDown={(e) => e.target === e.currentTarget && e.key === "Enter" && openQueue(q.name)}
               >
                 <div className="queue-title">
                   <div>
                     <h2>{q.name}</h2>
-                    <span>{m.overview.taskCount(compact(n))}</span>
                   </div>
-                  <span className="arrow">→</span>
+                  <span className="queue-completion">{compact(n)} Tasks</span>
                 </div>
                 <div className="status-row">
                   {statuses.map((s) => (
                     <button
                       key={s}
+                      className={s}
                       onClick={(e) => {
                         e.stopPropagation();
                         openQueue(q.name, s);
                       }}
                     >
-                      <i className={s} />
                       <b>{q.counts[s]}</b>
                       <span>{m.status[s]}</span>
                     </button>
                   ))}
                 </div>
-                <div className="progress">
-                  <span style={{ width: `${rate || 0}%` }} />
+                <div className="queue-distribution" role="img" aria-label={statuses.map(s => `${m.status[s]}: ${q.counts[s]}`).join(", ")}>
+                  {statuses.filter(s => q.counts[s] > 0).map(s => (
+                    <span key={s} className={s} style={{width: `${q.counts[s] / n * 100}%`}} data-tooltip={`${m.status[s]}: ${q.counts[s]}`} />
+                  ))}
                 </div>
-                <div className="queue-foot">
-                  <div className="queue-metrics">
-                    <span>
-                      {m.overview.completion}{" "}
-                      <b>{rate === null ? "—" : `${rate}%`}</b>
-                    </span>
-                    <span>
-                      {m.overview.failure}{" "}
-                      <b>{failureRate === null ? "—" : `${failureRate}%`}</b>
-                    </span>
-                  </div>
-                  <span
-                    className="recent-task"
-                    data-tooltip={
-                      q.recent
-                        ? `${q.recent.status} · ${q.recent.name || q.recent.id} · ${fmt(q.recent.updated_at)}`
-                        : undefined
-                    }
-                  >
-                    {q.recent ? (
-                      <>
-                        <Badge status={q.recent.status} />{" "}
-                        {q.recent.name || q.recent.id} ·{" "}
-                        <TimeValue value={q.recent.updated_at} />
-                      </>
-                    ) : (
-                      m.overview.noRecent
-                    )}
-                  </span>
-                </div>
+                <div className="queue-progress-label"><span>{compact(done)} / {compact(n)} Tasks completed</span><strong>{completion === null ? "—" : `${completion}%`}</strong></div>
+                <QueueWorkerSummary queue={q.name} server={server} />
               </article>
             );
           })}
@@ -2252,6 +2222,7 @@ export default function App() {
         />
       ) : (
         <Overview
+          server={status.data.server_url || ""}
           openQueue={(name, s = "") => {
             const url = new URL(location.href);
             url.search = "";

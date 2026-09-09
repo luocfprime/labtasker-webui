@@ -1810,10 +1810,60 @@ td code {
 @media (max-width: 600px) { .toolbar .task-name-filter { width: 100%; min-width: 0; flex-basis: 100%; } }
 
 .queue-location { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.routes-toggle { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; height: 28px; padding: 0 8px; font-size: 12px; font-weight: 400; color: var(--muted); border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; }
-.routes-toggle svg { flex-shrink: 0; }
+.routes-toggle { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; height: 28px; padding: 0 8px; font-size: var(--text-body); font-weight: 400; color: var(--muted); border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; }
+.routes-toggle svg { flex-shrink: 0; width: 18px; height: 18px; }
 .routes-toggle:hover, .routes-toggle:focus-visible { background: #f5f7fa; color: #242a34; }
 .routes-toggle[aria-expanded="true"] { color: #242a34; }
 .route-all { height: 36px; justify-content: center; margin-bottom: 10px; }
 .queue-location .crumb { min-width: 0; }
 @media (max-width: 600px) { .queue-location { gap: 8px; max-width: 100%; } }
+
+/* Compact Queue summaries pair exact counts with a proportional status strip. */
+.queue-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 460px)); }
+.queue-card .queue-title { align-items: center; margin-bottom: 12px; gap: 12px; }
+.queue-title h2 { font-weight: 500; font-size: 16px; margin: 0; overflow-wrap: anywhere; }
+.queue-completion { flex-shrink: 0; font-size: 12px; color: var(--muted); }
+.queue-card .status-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 0; border: 0; border-radius: 0; overflow: visible; margin: 0 -4px 10px; }
+.queue-card .status-row button { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; padding: 6px 4px; border: 0; border-radius: 5px; background: transparent; text-align: left; cursor: pointer; transition: background 120ms ease; }
+.queue-card .status-row button:hover { background: color-mix(in srgb, var(--state) 7%, white); }
+.queue-card .status-row b { color: var(--state); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.queue-card .status-row span { display: inline; margin: 0; font-size: 11px; text-transform: capitalize; }
+.queue-distribution { display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: #eef0f3; }
+.queue-distribution > span { background: var(--state); height: 100%; flex-shrink: 0; box-shadow: inset -1px 0 white; }
+.queue-card .queue-metrics { justify-content: space-between; margin-top: 8px; }
+.queue-card .queue-foot { margin-top: 0; }
+
+.queue-card .status-row button:focus-visible { outline: 2px solid var(--state); outline-offset: 3px; }
+.queue-card:hover { box-shadow: none; border-color: var(--line); }
+.queue-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+.inactive-routes { position: relative; justify-content: space-between; gap: 10px; padding: 10px 8px; color: var(--muted); font-size: 12px; line-height: 20px; cursor: pointer; }
+.inactive-routes input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.inactive-switch { flex: 0 0 26px; height: 16px; border-radius: 8px; background: #c9cfd8; position: relative; transition: background 120ms ease; }
+.inactive-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: white; transition: transform 120ms ease; }
+.inactive-routes input:checked + .inactive-switch { background: var(--blue); }
+.inactive-routes input:checked + .inactive-switch::after { transform: translateX(10px); }
+.inactive-routes input:focus-visible + .inactive-switch { outline: 2px solid var(--blue); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .inactive-switch, .inactive-switch::after { transition: none; } }
+
+.queue-progress-label { display: flex; align-items: baseline; justify-content: space-between; color: var(--muted); font-size: 11px; margin: 2px 0 7px; }
+.queue-progress-label strong { font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.queue-worker-summary { display: flex; align-items: baseline; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.queue-worker-summary b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.queue-worker-idle { color: #16734b; }
+.queue-worker-busy { color: #245cc7; }
+
+/* Queue overview: aligned counts, hairline distribution, quiet observations. */
+.queue-card { padding: 20px; }
+.queue-card .queue-title { margin-bottom: 20px; }
+.queue-card .status-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 0 -5px 18px; }
+.queue-card .status-row button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 5px; }
+.queue-card .status-row b { font-size: 24px; line-height: 1.2; letter-spacing: -.4px; }
+.queue-card .status-row span { font-size: 10px; }
+.queue-progress-label { margin: 8px 0 0; font-size: 11px; }
+.queue-progress-label strong { font-size: 11px; }
+.queue-observation-summary { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 18px; padding-top: 12px; border-top: 1px solid #eff1f4; }
+.queue-observation-summary .queue-worker-summary, .queue-route-summary { display: flex; gap: 8px; margin: 0; font-size: 11px; color: var(--muted); }
+.queue-route-summary b { font-weight: 500; }
+.queue-route-waiting { color: #ad7a17; }
+@media (max-width: 380px) { .queue-card { padding: 16px; } .queue-card .status-row b { font-size: 21px; } .queue-card .status-row { gap: 0; } }
