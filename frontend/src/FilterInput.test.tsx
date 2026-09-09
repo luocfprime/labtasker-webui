@@ -9,9 +9,9 @@ it("applies an example immediately and returns focus to the input", () => {
   render(<FilterInput label="Advanced filter expression" value="" onChange={change} onCommit={commit} />);
   fireEvent.click(screen.getByRole("button", { name: "Filter syntax and examples" }));
   expect(screen.getByText(/apply it immediately/)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: /Negative priority/ }));
-  expect(change).toHaveBeenCalledWith("priority < 0");
-  expect(commit).toHaveBeenCalledWith("priority < 0");
+  fireEvent.click(screen.getByRole("button", { name: /Includes route/ }));
+  expect(change).toHaveBeenCalledWith('"gpu-a100" in routes');
+  expect(commit).toHaveBeenCalledWith('"gpu-a100" in routes');
   expect(screen.getByRole("textbox")).toHaveFocus();
   expect(screen.queryByRole("region")).not.toBeInTheDocument();
 });

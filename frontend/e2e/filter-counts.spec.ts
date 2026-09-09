@@ -73,8 +73,8 @@ test('dropdowns and completed text edits apply without the Apply button', async 
   await name.press('Tab');
   await expect(page).toHaveURL(/name=demo/);
   await page.getByRole('button', {name:'Filter syntax and examples', exact:true}).click();
-  await page.getByRole('button', {name:/Negative priority/}).click();
-  await expect.poll(() => new URL(page.url()).searchParams.get('filter')).toBe('priority < 0');
+  await page.getByRole('button', {name:/Includes route/}).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get('filter')).toBe('"gpu-a100" in routes');
   await expect(page.getByRole('button', {name:'Apply', exact:true})).toBeVisible();
   await expect(page.getByRole('button', {name:'Delete all matching'})).toHaveCount(0);
 });

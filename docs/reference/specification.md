@@ -49,6 +49,12 @@ what the user is reading. Refresh explicitly returns to the top and refreshes da
 Resizing uses per-column widths and a filler for remaining space. JSON paths are read-only
 lookups; missing fields are blank.
 
+Advanced filter help provides ten built-in examples covering routes, status, priority,
+attempts, errors and custom fields. Route examples use exact-name array membership
+(`"gpu-a100" in routes` and `"gpu-a100" not in routes`); combine checks with
+`or` for any route or `and` for all. Selecting an example applies it immediately
+alongside the status and Task name selectors.
+
 Shared popup positioning clamps to the viewport and chooses above/below placement.
 Keep focus inside menus during internal interactions; Safari can emit a blur with no
 related target before a pointer click completes. Permanent request errors such as invalid

@@ -19,6 +19,7 @@ test('audit: filter help fits a short viewport and keeps all controls accessible
   await connect(page);
   await page.getByRole('button', {name:'Filter syntax and examples',exact:true}).click();
   await inside(page, page.locator('.filter-help'));
+  await expect(page.locator('.filter-help .filter-examples').first().getByRole('button')).toHaveCount(10);
   await page.getByRole('button', {name:'Save current',exact:true}).scrollIntoViewIfNeeded();
   await inside(page, page.getByRole('button', {name:'Save current',exact:true}));
 });
