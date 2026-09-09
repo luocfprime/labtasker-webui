@@ -2,10 +2,29 @@
 
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import Body, FastAPI, Request, Response
 
 app = FastAPI()
+server_version: str | None = None
+
+
+@app.middleware("http")
+async def advertise_version(request: Request, call_next: Any) -> Response:
+    response = await call_next(request)
+    if server_version is not None and request.url.path.startswith("/api/"):
+        response.headers["Labtasker-Server-Version"] = server_version
+    return response
+
+
+@app.post("/__test__/version", status_code=204)
+def set_version(value: str | None = Body(default=None)) -> Response:
+    global server_version
+    server_version = value
+    return Response(status_code=204)
+
+
 now = datetime.now(UTC).isoformat()
 tasks = {
     "t_ABCDEFGHIJKL": {
@@ -97,6 +116,8 @@ initial_tasks = deepcopy(tasks)
 
 @app.post("/__test__/reset", status_code=204)
 def reset() -> Response:
+    global server_version
+    server_version = None
     tasks.clear()
     tasks.update(deepcopy(initial_tasks))
     return Response(status_code=204)

@@ -625,6 +625,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx", extra = ["socks"] },
     { name = "labtasker-client" },
+    { name = "packaging" },
     { name = "uvicorn" },
 ]
 
@@ -650,6 +651,7 @@ requires-dist = [
     { name = "httpx", extras = ["socks"], specifier = ">=0.27,<1" },
     { name = "labtasker-client", specifier = ">=2.1,<3" },
     { name = "labtasker-client", marker = "extra == 'local'", specifier = ">=2.1,<3" },
+    { name = "packaging", specifier = ">=24,<27" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
 provides-extras = ["local"]

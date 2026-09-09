@@ -50,6 +50,11 @@ Choose a connection type on the connection page:
   `.` refers to the WebUI process's working directory. Local attachment uses the
   project's Unix socket and requires POSIX and a loopback bind.
 
+If a business response reports a Server older than the installed Labtasker Client,
+WebUI displays a dismissible upgrade warning. It adds no version-check request
+and does not block browsing or actions. Servers that omit their version do not
+trigger the warning. Reloading or reconnecting resets dismissal.
+
 Open a Queue, then filter its Tasks:
 
 ```python

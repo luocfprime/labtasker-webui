@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 
 import httpx
 
+from .compatibility import observe_server_version
 from .security import DestinationBlocked, validate_resolved_destination, validate_server_url
 from .sessions import Connection
 
@@ -79,6 +80,8 @@ class Upstream:
                 url = urljoin(url, target)
                 validate_server_url(url, self.allowed_origins, self.strict)
                 continue
+            if path.startswith("/api/"):
+                observe_server_version(response.headers.get("Labtasker-Server-Version"))
             if response.status_code >= 400:
                 try:
                     body = response.json().get("error", {})

@@ -1663,3 +1663,17 @@ td code {
 }
 .ui-select-menu [role="option"] > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-select-menu [role="option"] > span:last-child { flex-shrink: 0; }
+.server-version-warning {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px solid #d7b665;
+  border-radius: 6px;
+  background: #fff8e6;
+  color: #674d0a;
+  font-size: 13px;
+}
+.server-version-warning span { min-width: 0; overflow-wrap: anywhere; }
+.server-version-warning button { flex-shrink: 0; color: inherit; }

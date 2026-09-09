@@ -11,6 +11,32 @@ operation snapshots. The UI observes Tasks and supports cancel, requeue and sele
 deletion; it does not submit/edit Tasks. Local attachment discovers and uses the existing
 socket without managing the Labtasker process or opening its database.
 
+## Server version warnings
+
+The BFF observes `Labtasker-Server-Version` on ordinary upstream `/api/`
+responses, including errors and empty successes, for both HTTP and local
+connections. Existing connection verification stays unchanged; version warnings
+add no upstream requests. Health/schema responses are not version observations.
+
+On a BFF response that observed an upstream business response, it sends
+`Labtasker-Client-Version` (the installed `labtasker-client` version),
+`Labtasker-Server-Version` (normalized PEP 440 version, or an empty value when
+unknown), and `Labtasker-Server-Upgrade-Recommended` (`true` or `false`). Missing,
+invalid, or longer-than-128-character upstream versions are unknown. Comparison
+uses PEP 440 ordering, including patch and prerelease differences; the WebUI's
+independent package version is not compared to the Server. Version observations
+are request-local and must not leak across sessions or credentials. No tokens
+are added to these headers; upstream payloads and errors remain unchanged.
+
+The browser displays a compact, nonblocking, dismissible warning above the
+workspace when the Server is older. It recommends upgrading to the Client version
+or later without claiming that a particular operation is incompatible. Repeated
+responses for a dismissed version pair do not redisplay it. A different older
+version pair can warn again; an equal, newer, or unknown observation clears the
+visible warning. Responses without an upstream observation leave it unchanged.
+Observations and dismissal are memory-only and reset on reload/reconnection.
+Neither credentials nor version observations are written to the profile.
+
 ## State
 
 | State | Owner and persistence |

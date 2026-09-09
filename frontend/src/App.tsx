@@ -23,6 +23,7 @@ import { statusCountParams } from "./countFilters";
 import { Views } from "./Views";
 import { Select } from "./Select";
 import { messages as m } from "./messages";
+import { observeVersionHeaders, ServerVersionWarning } from "./ServerVersionWarning";
 
 export function PriorityValue({ value }: { value: number }) {
   return (
@@ -160,6 +161,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });
+  observeVersionHeaders(response.headers);
   if (!response.ok) {
     let body: ApiError = {};
     try {
@@ -2204,6 +2206,7 @@ export default function App() {
       allowDisconnect={true}
       onDisconnect={disconnect}
     >
+      <ServerVersionWarning />
       {queue ? (
         <Workspace
           key={`${status.data.server_url}/${queue}`}

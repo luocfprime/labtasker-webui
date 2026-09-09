@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import TypeAdapter, ValidationError
 
+from .compatibility import version_headers
 from .config import Settings, is_loopback_host
 from .local import local_connection
 from .operations import OperationStore
@@ -84,7 +85,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         }
                     },
                 )
-        return cast(Response, await call_next(request))
+        # A mutable request-local observation also captures upstream calls made in
+        # child tasks, without sharing versions across sessions or credentials.
+        observed: dict[str, str] = {}
+        context_token = version_headers.set(observed)
+        try:
+            response = cast(Response, await call_next(request))
+            response.headers.update(observed)
+            return response
+        finally:
+            version_headers.reset(context_token)
 
     @app.exception_handler(UpstreamError)
     async def upstream_error(_: Request, exc: UpstreamError) -> JSONResponse:
