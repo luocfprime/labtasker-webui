@@ -59,3 +59,18 @@ it("resets changes and saves a copy without overwriting the original", () => {
   const saved = JSON.parse(localStorage.getItem("labtasker:views:v1")!)["server/default"].views;
   expect(saved.map((v: {state: ViewState}) => v.state.widths.task)).toEqual([400, 600]);
 });
+it("compares view values independently of object key order and absent legacy routes", () => {
+  const original = {...state, widths: {task: 400, "path:args.foo": 180}};
+  const view = render(<Views scope="server/default" current={original} apply={vi.fn()} />);
+  create();
+  const equivalent = {...original,
+    filters: {route: "", descending: true, order_by: "created_at", filter: "priority > 0", name: "", status: "failed"},
+    widths: {"path:args.foo": 180, task: 400},
+  };
+  view.rerender(<Views scope="server/default" current={equivalent} apply={vi.fn()} />);
+  expect(screen.queryByLabelText("Unsaved changes")).toBeNull();
+  view.rerender(<Views scope="server/default" current={{...equivalent, filters: {...equivalent.filters, route: "gpu"}}} apply={vi.fn()} />);
+  expect(screen.getByLabelText("Unsaved changes")).toBeVisible();
+  view.rerender(<Views scope="server/default" current={{...equivalent, widths: {...equivalent.widths, task: 450}}} apply={vi.fn()} />);
+  expect(screen.getByLabelText("Unsaved changes")).toBeVisible();
+});

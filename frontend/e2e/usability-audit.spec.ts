@@ -162,3 +162,147 @@ test('audit: large profiles save successfully in the browser', async ({page}) =>
   await expect.poll(() => saved['labtasker:views:v1']).toBe(archived);
   await expect(page.locator('.profile-save-error')).toHaveCount(0);
 });
+
+test('audit: Escape dismisses the view picker from its create action', async ({page}) => {
+  await connect(page);
+  const picker = page.getByRole('combobox', {name:'Data view'});
+  await picker.click();
+  await picker.press('Tab');
+  const create = page.getByRole('button', {name:'+ Create view',exact:true});
+  await expect(create).toBeFocused();
+  await create.press('Shift+Tab');
+  await expect(picker).toBeFocused();
+  await picker.press('Tab');
+  await expect(create).toBeFocused();
+  await create.press('Escape');
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await expect(picker).toBeFocused();
+  await picker.press('Enter');
+  await picker.press('Tab');
+  await create.press('Tab');
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('audit: history sorting preserves Task selection and history filtering clears it', async ({page}) => {
+  await connect(page);
+  const checkbox = page.locator('tbody input[type="checkbox"]').first();
+  const label = (await checkbox.getAttribute('aria-label'))!;
+  await checkbox.check();
+  await page.getByRole('combobox', {name:'Sort direction'}).click();
+  await page.getByRole('option', {name:'Ascending',exact:true}).click();
+  await expect(page).toHaveURL(/descending=false/);
+  await page.goBack();
+  await expect(page.getByRole('combobox', {name:'Sort direction'})).toContainText('Descending');
+  await expect(page.getByLabel(label, {exact:true})).toBeChecked();
+  await page.goForward();
+  await expect(page.getByRole('combobox', {name:'Sort direction'})).toContainText('Ascending');
+  await expect(page.getByLabel(label, {exact:true})).toBeChecked();
+  await page.locator('.stats .pending').click();
+  await expect(page.locator('.selection')).toHaveCount(0);
+  await page.locator('tbody input[type="checkbox"]').first().check();
+  await page.goBack();
+  await expect(page.locator('.selection')).toHaveCount(0);
+});
+
+test('audit: selector typeahead preserves browser shortcuts', async ({page}) => {
+  await connect(page);
+  const picker = page.getByRole('combobox', {name:'All statuses'});
+  await picker.focus();
+  for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) {
+    const prevented = await picker.evaluate((el, modifier) => {
+      const event = new KeyboardEvent('keydown', {key:'r', [modifier]:true, bubbles:true, cancelable:true});
+      el.dispatchEvent(event);
+      return event.defaultPrevented;
+    }, modifier);
+    expect(prevented).toBe(false);
+    await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  }
+  await picker.press('r');
+  await expect(picker).toHaveAttribute('aria-expanded', 'true');
+  await picker.press('Enter');
+  await expect(picker).toContainText('running');
+  await expect(page).toHaveURL(/status=running/);
+});
+
+test('audit: saved views preserve selection until the Task filter range changes', async ({page}) => {
+  await page.addInitScript(() => {
+    const state = {filters:{status:'',name:'',filter:'',route:'',order_by:'created_at',descending:false},visible:['status','task'],custom:[],order:['status','task'],widths:{}};
+    localStorage.setItem('labtasker:views:v1', JSON.stringify({'http://127.0.0.1:18765/robotwin': {active:'',views:[
+      {id:'ascending',name:'Ascending view',state},
+      {id:'pending',name:'Pending view',state:{...state,filters:{...state.filters,status:'pending'}}},
+    ]}}));
+  });
+  await connect(page);
+  const checkbox = page.locator('tbody input[type="checkbox"]').first();
+  const label = (await checkbox.getAttribute('aria-label'))!;
+  await checkbox.check();
+  const picker = page.getByRole('combobox', {name:'Data view'});
+  await picker.click();
+  await page.getByRole('option',{name:'Ascending view',exact:true}).click();
+  await expect(page.getByRole('combobox',{name:'Sort direction'})).toContainText('Ascending');
+  await expect(page.getByLabel(label,{exact:true})).toBeChecked();
+  await picker.click();
+  await page.getByRole('option',{name:'Pending view',exact:true}).click();
+  await expect(page).toHaveURL(/status=pending/);
+  await expect(page.locator('.selection')).toHaveCount(0);
+});
+
+test('audit: legacy saved views are clean after applying and resetting', async ({page}) => {
+  await page.addInitScript(() => {
+    const state = {filters:{status:'',name:'',filter:'',order_by:'created_at',descending:true},visible:['status','task'],custom:[],order:['status','task'],widths:{}};
+    localStorage.setItem('labtasker:views:v1', JSON.stringify({'http://127.0.0.1:18765/robotwin': {active:'',views:[{id:'legacy',name:'Legacy view',state}]}}));
+  });
+  await connect(page);
+  await page.getByRole('combobox',{name:'Data view'}).click();
+  await page.getByRole('option',{name:'Legacy view',exact:true}).click();
+  await expect(page.getByLabel('Unsaved changes')).toHaveCount(0);
+  await page.locator('.stats .pending').click();
+  await expect(page.getByLabel('Unsaved changes')).toBeVisible();
+  await page.getByRole('button',{name:'View actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Reset changes',exact:true}).click();
+  await expect(page.getByLabel('Unsaved changes')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/status=pending/);
+});
+
+test('audit: pending connection changes cannot return to the old workspace', async ({page}) => {
+  await connect(page);
+  await page.locator('.stats .pending').click();
+  await page.getByRole('button',{name:'Change',exact:true}).click();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => {release = resolve;});
+  let requested = false;
+  await page.route('**/api/webui/connect', async route => {
+    requested = true;
+    await gate;
+    await route.fulfill({status:503,json:{error:{message:'Simulated connection failure'}}});
+  });
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  try {
+    await expect.poll(() => requested).toBe(true);
+    await expect(page.getByRole('button',{name:'Back to workspace',exact:true})).toBeDisabled();
+  } finally {release();}
+  await expect(page.locator('.connect .error')).toContainText('Simulated connection failure');
+  await expect(page.getByRole('button',{name:'Back to workspace',exact:true})).toBeEnabled();
+  await page.getByRole('button',{name:'Back to workspace',exact:true}).click();
+  await expect(page.locator('.stats .pending')).toHaveAttribute('aria-pressed','true');
+});
+
+test('audit: selecting the current tab or Worker status does not add history entries', async ({page}) => {
+  await connect(page);
+  const initialLength = await page.evaluate(() => history.length);
+  await page.getByRole('button',{name:'Tasks',exact:true}).click();
+  expect(await page.evaluate(() => history.length)).toBe(initialLength);
+  await page.getByRole('button',{name:'Workers',exact:true}).click();
+  await expect(page).toHaveURL(/tab=workers/);
+  const workerLength = await page.evaluate(() => history.length);
+  await page.getByRole('button',{name:'Workers',exact:true}).click();
+  expect(await page.evaluate(() => history.length)).toBe(workerLength);
+  await page.getByRole('combobox',{name:'Worker status'}).click();
+  await page.getByRole('option',{name:'All statuses',exact:true}).click();
+  expect(await page.evaluate(() => history.length)).toBe(workerLength);
+  await page.goBack();
+  await expect(page.getByRole('button',{name:'Tasks',exact:true})).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('button',{name:'Tasks',exact:true}).click();
+  await page.goForward();
+  await expect(page.getByRole('button',{name:'Workers',exact:true})).toHaveAttribute('aria-pressed','true');
+});

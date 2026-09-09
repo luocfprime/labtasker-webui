@@ -7,14 +7,6 @@ import { isPermanentRequestError } from "./queryPolicy";
 
 const polling = (query: {state: {error: Error | null}}) => document.hidden || (isPermanentRequestError(query.state.error) || query.state.error instanceof ApiRequestError && query.state.error.status === 501) ? false : 15_000;
 function duration(ms: number) { const seconds = Math.max(0, Math.floor(ms / 1000)); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
-export function ObservationError({error, updatedAt, retry}: {error: Error | null; updatedAt: number; retry: () => void}) {
-  if (!error) return null;
-  return <div className="observation-error" role="status">
-    <span>{error instanceof ApiRequestError && error.status === 501 ? "Not supported by this Server." : error.message}
-      {updatedAt > 0 && <> Last successful update: {new Date(updatedAt).toLocaleTimeString()}.</>}</span>
-    <button className="link" onClick={retry}>Retry</button>
-  </div>;
-}
 export function useRouteCounts(queue: string, server: string, inactive: boolean) {
   const prefix = `/api/webui/queues/${encodeURIComponent(queue)}`;
   const tasks = useQuery({queryKey: ["route-tasks", server, queue, inactive], queryFn: () => readGroups(`${prefix}/task-groups?include_inactive=${inactive}`), refetchInterval: polling, retry: (n, error) => n < 3 && !(error instanceof ApiRequestError && error.status === 501) && !isPermanentRequestError(error)});
@@ -51,13 +43,12 @@ export function RouteSidebar({counts, route, choose, inactive, setInactive}: {
       {rows.map(row => <button key={row.name} className={`route-item${route === row.name ? " active" : ""}`} aria-pressed={route === row.name} onClick={() => choose(row.name)}>
         <span className="route-name" data-tooltip={row.name}><RouteDot counts={counts} route={row.name} />{row.name}</span>
         <small>{tasksKnown ? <>{row.pending} Pending{row.running > 0 && <> · {row.running} Running</>}</> : "Task counts unavailable"}</small>
-        <small>{!workersKnown ? "Worker counts unavailable" : row.idle + row.busy ? <>{row.idle} Idle · {row.busy} Busy</> : <span className={row.pending || row.running ? "observation-delayed" : ""}>{row.pending || row.running ? "No active Workers" : "Inactive"}</span>}</small>
+        <small>{!workersKnown ? "Worker counts unavailable" : row.idle + row.busy ? <>{row.idle} Idle · {row.busy} Busy</> : <span className={tasksKnown && (row.pending || row.running) ? "observation-delayed" : ""}>{!tasksKnown || row.pending || row.running ? "No active Workers" : "Inactive"}</span>}</small>
       </button>)}
       {(counts.tasks.isLoading || counts.workers.isLoading) && <small>Loading routes…</small>}
     </div>
+    {(counts.tasks.error || counts.workers.error) && <small className="muted">Route counts unavailable</small>}
     <label className="inactive-routes"><span>Inactive routes</span><input type="checkbox" aria-label="Include inactive routes" checked={inactive} onChange={event => setInactive(event.target.checked)} /><span className="inactive-switch" aria-hidden="true" /></label>
-    <ObservationError error={counts.tasks.error} updatedAt={counts.tasks.dataUpdatedAt} retry={() => void counts.tasks.refetch()} />
-    <ObservationError error={counts.workers.error} updatedAt={counts.workers.dataUpdatedAt} retry={() => void counts.workers.refetch()} />
   </aside>;
 }
 export function WorkersPanel({queue, server, route, counts, status, setStatus, openTask}: {
@@ -103,14 +94,13 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
       <button className="worker-busy-count" aria-pressed={status === "busy"} onClick={() => setStatus(status === "busy" ? "" : "busy")}><strong>{unavailable ? "—" : busy}</strong> Busy</button>
     </div>
     <div className="worker-toolbar"><Select label="Worker status" value={status} onChange={setStatus} options={[{value: "", label: "All statuses"}, {value: "idle", label: "Idle"}, {value: "busy", label: "Busy"}]} /><span>Latest Worker observations</span></div>
-    <ObservationError error={list.error} updatedAt={list.dataUpdatedAt} retry={() => void list.refetch()} />
-    <ObservationError error={counts.workers.error} updatedAt={counts.workers.dataUpdatedAt} retry={() => void counts.workers.refetch()} />
+    {list.error && <p className="muted">Worker observations unavailable. Use Refresh to retry.</p>}
     <div className="worker-table table-wrap" ref={scroll}>
       <table><thead><tr><th>Worker</th><th>Status</th><th>Route</th><th>Task</th><th>Last seen</th></tr></thead><tbody>
         {rows.map(w => {const freshness = workerFreshness(w, now);return <tr key={w.id}>
           <td><code data-tooltip={w.id}>{w.id}</code></td><td><span className={`badge worker-${w.status}`}>{w.status === "idle" ? "Idle" : "Busy"}</span></td>
           <td><span className="worker-route" data-tooltip={w.route}><RouteDot counts={counts} route={w.route} />{w.route}</span></td>
-          <td>{w.task_id ? <button className="link" data-tooltip={w.task_id} onClick={() => openTask(w.task_id!)}>{w.task_id}</button> : "—"}</td>
+          <td>{w.task_id ? <button className="link" data-task-link={w.task_id} data-tooltip={w.task_id} onClick={() => openTask(w.task_id!)}>{w.task_id}</button> : "—"}</td>
           <td><time dateTime={w.last_seen_at} data-tooltip={new Date(w.last_seen_at).toLocaleString()}>{duration(freshness.age)} ago</time>
             {!list.error && freshness.delayed && <small className="observation-delayed">{freshness.expired ? "Observation expired" : `Update delayed · Expires in ${duration(freshness.remaining)}`}</small>}
           </td>

@@ -1,3 +1,4 @@
+import { ObservationNotices } from "./ObservationNotices";
 import { workspacePreferences, saveWorkspacePreferences } from "./workspacePreferences";
 import { api, ApiRequestError } from "./api";
 import { QueueWorkerSummary, RouteSidebar, RouteChips, RouteCountsContext, WorkersPanel, useRouteCounts } from "./Observations";
@@ -120,6 +121,10 @@ function filtersFromUrl(): Filters {
 function sameFilters(a: Filters, b: Filters) {
   return (["status", "name", "filter", "order_by", "descending"] as const).every(key => a[key] === b[key]) && (a.route || "") === (b.route || "");
 }
+function sameTaskRange(a: Filters, b: Filters) {
+  return a.status === b.status && a.name === b.name && a.filter === b.filter &&
+    (a.route || "") === (b.route || "");
+}
 const statuses: Status[] = [
   "pending",
   "running",
@@ -148,12 +153,14 @@ export const adaptivePolling =
     );
   };
 
+let toastTimeout: number | undefined;
 function notify(message: string) {
   const element = document.getElementById("toast");
   if (!element) return;
   element.textContent = message;
   element.classList.add("visible");
-  window.setTimeout(() => element.classList.remove("visible"), 5000);
+  window.clearTimeout(toastTimeout);
+  toastTimeout = window.setTimeout(() => element.classList.remove("visible"), 5000);
 }
 const fmt = (value: string | null) =>
   value
@@ -330,7 +337,7 @@ export function Connect({ onDone, onCancel, initialServer = "" }: { onDone: () =
   return (
     <main className="connect">
       <section className="connect-card">
-        {onCancel && <button className="link" onClick={onCancel}>Back to workspace</button>}
+        {onCancel && <button className="link" disabled={mutation.isPending} onClick={onCancel}>Back to workspace</button>}
         <Brand />
         <div className="connect-copy">
           <h1>{m.connect.title}</h1>
@@ -572,6 +579,7 @@ function Workspace({
     if (nextTab === "workers") url.searchParams.set("tab", "workers"); else url.searchParams.delete("tab");
     if (nextStatus) url.searchParams.set("worker_status", nextStatus); else url.searchParams.delete("worker_status");
     url.searchParams.delete("task");
+    if (url.href === location.href) return;
     history.pushState({}, "", url);
     setTab(nextTab); setWorkerStatus(nextStatus); setTaskId(null);
   };
@@ -862,7 +870,9 @@ function Workspace({
       if (!sameFilters(filters, restored)) {
         setFilters(restored);
         setDraft(restored);
-        setSelected(new Set());
+        if (!sameTaskRange(filters, restored)) {
+          setSelected(new Set());
+        }
       }
       setTaskId(url.get("task"));
     };
@@ -871,16 +881,18 @@ function Workspace({
   }, [queue, filters]);
   useEffect(() => {
     if (!taskId && originTaskId.current) {
-      const selector = `[data-task-id="${CSS.escape(originTaskId.current)}"]`;
+      const selector = tab === "workers"
+        ? `.worker-table [data-task-link="${CSS.escape(originTaskId.current)}"]`
+        : `[data-task-id="${CSS.escape(originTaskId.current)}"]`;
       requestAnimationFrame(() =>
-        document.querySelector<HTMLTableRowElement>(selector)?.focus(),
+        document.querySelector<HTMLElement>(selector)?.focus(),
       );
     }
-  }, [taskId]);
+  }, [taskId, tab]);
   const apply = () => {
     if (sameFilters(filters, draft)) return;
     setFilters(draft);
-    if (["route", "status", "name", "filter"].some(key => filters[key as keyof Filters] !== draft[key as keyof Filters])) setSelected(new Set());
+    if (!sameTaskRange(filters, draft)) setSelected(new Set());
   };
   const applyFields = (values: Partial<Filters>) => {
     setDraft(current => ({ ...current, ...values }));
@@ -888,7 +900,7 @@ function Workspace({
       const next = { ...current, ...values };
       return sameFilters(current, next) ? current : next;
     });
-    if (Object.entries(values).some(([key, value]) => ["route", "status", "name", "filter"].includes(key) && filters[key as keyof Filters] !== value)) setSelected(new Set());
+    if (!sameTaskRange(filters, {...filters, ...values})) setSelected(new Set());
   };
   const all = useMemo(() => {
     if (!tasks.data) return EMPTY_TASKS;
@@ -1102,8 +1114,9 @@ function Workspace({
     }
     setTaskId(id);
   };
-  const closeTask = () => {
-    if (history.state?.labtaskerDrawer) {
+  const closeTask = (replaceHistory = false) => {
+    if (replaceHistory) originTaskId.current = null;
+    if (!replaceHistory && history.state?.labtaskerDrawer) {
       history.back();
     } else {
       const url = new URL(location.href);
@@ -1134,13 +1147,15 @@ function Workspace({
           apply={view => {
             setFilters({...view.filters, route: view.filters.route || ""}); setDraft({...view.filters, route: view.filters.route || ""}); setVisibleColumns(new Set(view.visible));
             setCustomPaths(view.custom.filter(path => pathParts(path))); setSavedOrder(view.order); setColumnSizing(view.widths);
-            setSelected(new Set()); setTaskId(null);
+            if (!sameTaskRange(filters, view.filters)) setSelected(new Set());
+            setTaskId(null);
           }} />
         <button className="secondary" onClick={() => {refreshList(); void routeCounts.tasks.refetch(); void routeCounts.workers.refetch(); void qc.invalidateQueries({queryKey: ["workers", server, queue]});}}>
           {tasks.isFetching && <Spinner />} {m.common.refresh}
         </button>
       </div>
       </div>
+      <ObservationNotices key={`${server}/${queue}`} server={server} queue={queue} />
       <RouteCountsContext.Provider value={routeCounts}><div className={`queue-workspace${preferences.collapsed ? " routes-collapsed" : ""}${resizingRoutes ? " resizing-routes" : ""}`} style={{"--route-preferred-width": `${preferences.width}px`} as CSSProperties}>
         <div id="queue-routes" className="route-rail" aria-hidden={preferences.collapsed} inert={preferences.collapsed}><RouteSidebar counts={routeCounts} route={filters.route || ""}
           choose={route => {applyFields({route}); setTaskId(null);}}
@@ -1642,7 +1657,7 @@ export function TaskDrawer({
 }: {
   queue: string;
   taskId: string;
-  close: () => void;
+  close: (replaceHistory?: boolean) => void;
   changed: () => void;
   requestDelete: (id: string) => void;
 }) {
@@ -1715,10 +1730,19 @@ export function TaskDrawer({
     <Dialog.Root open modal={false} onOpenChange={(open) => !open && close()}>
       <Dialog.Portal>
         <Dialog.Content asChild aria-describedby={undefined}
-          onInteractOutside={(event) => {
-            // A task-row click switches the inspector; it must not also close it.
-            if (event.target instanceof Element && event.target.closest("tr[data-task-id]")) {
+          onEscapeKeyDown={event => {
+            if (event.target instanceof Element && event.target.closest(".observation-notice")) {
               event.preventDefault();
+            }
+          }}
+          onInteractOutside={(event) => {
+            // Task links switch the inspector; notification actions leave it open.
+            if (event.target instanceof Element && event.target.closest("tr[data-task-id], [data-task-link], #corner-notifications, .observation-notice, .profile-save-error")) {
+              event.preventDefault();
+            } else {
+              // The outside control may push history in the same interaction.
+              event.preventDefault();
+              close(true);
             }
           }}
         >

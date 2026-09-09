@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "labtasker-webui"
-version = "0.1.1"
+version = "0.2.0"
 description = "A focused web interface for Labtasker v2"
 readme = "README.md"
 license = "Apache-2.0"
@@ -56,7 +56,7 @@ only-include = ["src", "tests", "README.md", "LICENSE", "assets", "CONTRIBUTING.
 addopts = "-ra --strict-config --strict-markers"
 timeout = 30
 testpaths = ["tests"]
-markers = ["integration: requires a separately running real Labtasker v2 Server"]
+markers = ["integration: opt-in checks requiring a running or installed Labtasker v2 Server"]
 
 [tool.ruff]
 line-length = 100

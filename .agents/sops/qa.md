@@ -37,6 +37,20 @@ LABTASKER_REAL_SERVER_URL=http://127.0.0.1:8000 uv run pytest -m integration tes
 Set `LABTASKER_REAL_SERVER_TOKEN` through an existing secure mechanism if needed; never
 paste it into committed scripts or captured shell output.
 
+To check a sibling Labtasker source checkout, run the isolated BFF contract test:
+
+```sh
+uv run --with ../labtasker/packages/labtasker-server pytest -q -s -m integration tests/test_upstream_source.py
+uv run --with-editable ../labtasker/packages/labtasker-server --with-editable ../labtasker/packages/labtasker-client pytest -q -s -m integration tests/test_upstream_source.py
+```
+
+These commands use temporary dependency overlays without changing the lockfile. The
+first checks the locked Client against the source Server; the second uses both source
+packages in editable mode. The test creates only a temporary database and synthetic Tasks/Workers,
+using in-process ASGI transport without connecting to a running instance. It covers
+pagination, filters, counts, observations, error forwarding and Task actions. The
+normal suite excludes it; without an installed Server it skips.
+
 ## Interaction review matrix
 
 | Area | Cases to verify |

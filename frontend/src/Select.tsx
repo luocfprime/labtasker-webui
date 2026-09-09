@@ -10,6 +10,7 @@ export function Select({ label, value, options, onChange, action, modified }: {
   const [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const actionButton = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   useAnchoredPanel(open, trigger, panel, label === "Data view" ? 280 : 160, "left", true);
   useEffect(() => {
@@ -29,22 +30,36 @@ export function Select({ label, value, options, onChange, action, modified }: {
     onChange(options[index].value);
     setOpen(false);
   };
-  return <div className="ui-select" ref={root} onBlur={(event) => {
+  return <div className="ui-select" ref={root} onKeyDown={(event) => {
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      trigger.current?.focus();
+    } else if (event.key === "Tab" && open && action) {
+      if (!event.shiftKey && event.target === trigger.current) {
+        event.preventDefault();
+        actionButton.current?.focus();
+      } else if (event.shiftKey && event.target === actionButton.current) {
+        event.preventDefault();
+        trigger.current?.focus();
+      }
+    }
+  }} onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
     <button ref={trigger} type="button" role="combobox" aria-label={label} aria-haspopup="listbox"
       aria-expanded={open} aria-controls={`${id}-list`} aria-activedescendant={open ? `${id}-${active}` : undefined}
       onClick={() => { setActive(selected); setOpen(!open); }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
-        else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
           event.preventDefault();
           setOpen(true);
           setActive(event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 :
             !open ? selected : (active + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length);
         } else if ((event.key === "Enter" || event.key === " ") && open) {
           event.preventDefault(); choose(active);
-        } else if (event.key.length === 1 && event.key !== " ") {
+        } else if (event.key.length === 1 && event.key !== " " && !event.ctrlKey && !event.metaKey && !event.altKey) {
           const index = options.findIndex((option, index) => index > active && option.label.toLowerCase().startsWith(event.key.toLowerCase()));
           const next = index >= 0 ? index : options.findIndex((option) => option.label.toLowerCase().startsWith(event.key.toLowerCase()));
           if (next >= 0) { event.preventDefault(); setOpen(true); setActive(next); }
@@ -61,7 +76,7 @@ export function Select({ label, value, options, onChange, action, modified }: {
         <span data-tooltip={option.label}>{option.label}</span><span aria-hidden="true">{value === option.value ? "✓" : ""}</span>
       </div>)}
       </div>
-      {action && <button type="button" className="select-action" onClick={() => {setOpen(false); action.onSelect();}}>{action.label}</button>}
+      {action && <button ref={actionButton} type="button" className="select-action" onClick={() => {setOpen(false); action.onSelect();}}>{action.label}</button>}
     </div>}
   </div>;
 }

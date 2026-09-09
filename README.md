@@ -13,7 +13,8 @@ The key features are:
   cancelled Tasks. Status counts follow the applied Task name and advanced filter, across all statuses; the Status selector narrows only the Task list and its total.
 - **Routes and Workers:** Collapse route navigation when you need more table space.
   Inspect Idle/Busy Worker counts and last-seen reports; include inactive routes when
-  reviewing historical work. These features require Server observation/group support.
+  reviewing historical work. These features require Server 2.2 or later; Worker
+  reports require Workers that support observations.
 - **Flexible result exploration:** Filter Task fields and nested values, or add
   custom columns such as `args.test_num` and `result.succ_rate`. Resize, reorder,
   and double-click columns to fit their contents.

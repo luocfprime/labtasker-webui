@@ -10,6 +10,15 @@ export type ViewState = {
 };
 type View = {id: string; name: string; state: ViewState};
 type Collection = {active: string; views: View[]};
+function sameViewState(a: ViewState, b: ViewState) {
+  return (["status", "name", "filter", "order_by", "descending"] as const)
+    .every(key => a.filters[key] === b.filters[key]) &&
+    (a.filters.route || "") === (b.filters.route || "") &&
+    (["visible", "custom", "order"] as const).every(key =>
+      a[key].length === b[key].length && a[key].every((value, index) => value === b[key][index])) &&
+    Object.keys(a.widths).length === Object.keys(b.widths).length &&
+    Object.entries(a.widths).every(([key, value]) => b.widths[key] === value);
+}
 const storageKey = "labtasker:views:v1";
 function readAll(): Record<string, Collection> {
   try { const data = JSON.parse(localStorage.getItem(storageKey) || "{}"); return data && typeof data === "object" && !Array.isArray(data) ? data : {}; } catch { return {}; }
@@ -36,7 +45,7 @@ export function Views({scope, current, apply}: {scope: string; current: ViewStat
   const menu = useRef<HTMLDivElement>(null);
   useAnchoredPanel(open, menuButton, menu, 180, "right");
   const selected = data.views.find(v => v.id === data.active);
-  const dirty = !!selected && JSON.stringify(selected.state) !== JSON.stringify(current);
+  const dirty = !!selected && !sameViewState(selected.state, current);
   const save = (next: Collection) => {
     setData(next); saveSetting(storageKey, JSON.stringify({...readAll(), [scope]: next}));
   };
@@ -44,8 +53,17 @@ export function Views({scope, current, apply}: {scope: string; current: ViewStat
     if (!open) return;
     menu.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     const dismiss = (e: PointerEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    const dismissOnFocus = (event: FocusEvent) => {
+      if (!root.current?.contains(event.target as Node) || event.target instanceof Element && event.target.closest(".view-selector")) {
+        setOpen(false);
+      }
+    };
     document.addEventListener("pointerdown", dismiss);
-    return () => document.removeEventListener("pointerdown", dismiss);
+    document.addEventListener("focusin", dismissOnFocus);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("focusin", dismissOnFocus);
+    };
   }, [open]);
   const start = (kind: NonNullable<typeof dialog>) => {
     setOpen(false);
@@ -75,10 +93,12 @@ export function Views({scope, current, apply}: {scope: string; current: ViewStat
     {dirty && <button className="view-save" onClick={() => save({...data, views: data.views.map(v => v.id === data.active ? {...v, state: structuredClone(current)} : v)})}>Save</button>}
     <button ref={menuButton} type="button" aria-label="View actions" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>⋯</button>
     {open && <div ref={menu} className="views-menu" role="menu" aria-label="View actions"
-      onBlur={e => {if (e.relatedTarget && !root.current?.contains(e.relatedTarget)) setOpen(false);}}
       onKeyDown={e => {
         if (e.key === "Escape") {e.preventDefault(); setOpen(false); menuButton.current?.focus();}
         const items = [...(menu.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];
+        if (e.key === "Tab" && e.shiftKey && document.activeElement === items[0]) {
+          e.preventDefault(); setOpen(false); menuButton.current?.focus();
+        }
         if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
           e.preventDefault(); const index = items.indexOf(document.activeElement as HTMLButtonElement);
           items[e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();

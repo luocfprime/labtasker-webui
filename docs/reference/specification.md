@@ -54,6 +54,9 @@ A profile contains a map of UI settings; it is not itself a named data view. Vie
 filters, sort order, visible/custom columns, order and widths. Layout edits do not mutate
 a named view until Save. The backend UI-key allowlist must remain consistent with frontend
 persistence keys; internal browser recovery keys must never enter profile API payloads.
+Saved-view change detection compares setting values rather than object key order.
+Older views without a route field are equivalent to an empty route selection, so
+applying or resetting them does not falsely report unsaved changes.
 
 Backend profile writes use atomic replacement and restrictive permissions. Failed writes
 must not be reported as persisted by a subsequent API read. Browser pending writes are
@@ -76,6 +79,10 @@ Status changes the highlighted card, Task list and list total without narrowing 
 other cards. List totals include all applied selectors, not just loaded rows.
 Scrolling older rows pauses list polling to avoid reordering
 what the user is reading. Refresh explicitly returns to the top and refreshes data/counts.
+Task selection survives sorting, including browser Back/Forward through sort changes.
+Applying or resetting a saved view also preserves selection when only sorting or
+column layout changes.
+Changing the filter range clears selection, including through browser history.
 Resizing uses per-column widths and a filler for remaining space. JSON paths are read-only
 lookups; missing fields are blank.
 
@@ -101,7 +108,15 @@ attempts, errors and custom fields. Route examples use exact-name array membersh
 `or` for any route or `and` for all. Selecting an example applies it immediately
 alongside the status and Task name selectors.
 
+View actions closes when keyboard focus leaves the view controls or moves to the
+Data view picker, so its menu cannot remain open behind that picker. Shift+Tab from
+the first menu item closes the menu and returns focus to the View actions trigger.
 Shared popup positioning clamps to the viewport and chooses above/below placement.
+Escape dismisses a selector from both its trigger and its optional action button,
+returning focus to the trigger. Tab and Shift+Tab move between the trigger and its
+action; Tab from the action leaves and dismisses the menu.
+Selector letter navigation ignores Ctrl, Meta and Alt combinations so browser
+shortcuts keep their normal behavior.
 Keep focus inside menus during internal interactions; Safari can emit a blur with no
 related target before a pointer click completes. Permanent request errors such as invalid
 filters should appear immediately; only transient failures should retry.
@@ -109,6 +124,10 @@ Task action errors and pending indicators belong to the selected Task. Switching
 resets those indicators without cancelling the previous action; its eventual response
 invalidates the original Task cache, not the newly selected Task. Pending actions remain
 tracked per Task across switching away and back, so returning cannot submit a duplicate.
+Outside interactions dismiss the drawer by synchronously removing its Task from the
+current history entry, allowing a clicked filter or navigation control to update history
+without racing a Back operation. Focus stays with the outside control. The close button
+and Escape retain normal drawer history navigation and restore the originating Task focus.
 
 ## Build boundary
 
@@ -130,11 +149,33 @@ and stoppable until completion.
 
 ## Routes and Worker observations
 
+Observation request failures appear as bottom-right notifications, outside the Routes
+layout. Identical messages share one notification listing the affected observations;
+Retry retries all affected active requests. Dismiss (or Escape while focused) keeps
+that message quiet for the current Queue workspace, including refreshes and tab
+switches. Successful requests clear their notification. Unavailable counts and Worker
+observations remain marked in place after dismissal; Refresh remains available.
+Corner notifications share a vertical stack with settings-save failures and transient
+feedback, so recovery controls do not overlap. Notification actions leave the Task
+drawer and its URL open. Modal dialogs remain above the notification stack.
+Each new transient operation message receives a fresh five-second display duration;
+an older timer cannot hide it early. Long column paths wrap within the viewport.
+A notification stays visible while its Retry is pending. Pending retries belong to
+active request identities: changing the Worker filter or tab hides inactive requests
+and cannot disable a new filter's Retry, even when the error text matches. Escape
+from a focused notification dismisses that notification without closing the Task
+drawer; Escape from the drawer still closes the drawer. Worker append failures use
+only the list's Retry loading control, which retries the failed cursor instead of
+refreshing already-loaded pages.
+
 Each Queue has Tasks and Workers tabs and a collapsible Routes sidebar. The sidebar
 combines grouped pending/running Task routes with active Worker routes. Routes with
 only terminal Tasks and no active Workers appear when Include inactive routes is on.
 All group pages must load before absence is treated as zero. Unsupported or failed
 observation requests remain explicit; they never imply that there are zero Workers.
+A route is labeled Inactive only when both Task and Worker observations are available.
+If Task observations fail, a known absence of Workers is labeled No active Workers
+without inferring current Task demand from stale counts.
 Existing Task browsing remains available on Servers without grouped counts.
 
 Selecting a route intersects the Task filter with membership in `routes`, including
@@ -142,18 +183,26 @@ status counts, and filters Workers by `route`. Route and tab navigation use brow
 history; named views include the selected route. Sidebar preferences belong to the
 connection and Queue. Task summary controls use colored numbers followed by status
 words on one line; they retain their status-filter toggle behavior.
+Selecting the current tab or Worker status does not add a duplicate history entry
+when the resulting URL is unchanged.
 
 Worker state counts use grouped observations, independently of the paginated Worker
 list. Observations describe reports, not Task ownership or execution guarantees.
 Normal rows show last seen. Only after more than two 60-second reporting cycles
 without a report does the row show delayed-update and expiry information. Expiry
 uses the Server's `expires_at`; UI polling does not define the reporting interval.
+Delayed-update and expiry messages wrap within their cell so narrow columns do not
+hide the remaining time.
 Failed list refreshes suppress expiry warnings and expose update/retry information.
 Worker IDs, routes and times retain full-value hover tooltips; associated Tasks open
 the existing detail drawer.
+Switching between associated Task links keeps the drawer open. Explicitly closing it
+restores focus to the most recently opened Worker Task link.
 
 Change opens connection settings without discarding the current workspace. Back to
 workspace restores it; a successful connection change clears the query cache.
+Back to workspace is disabled while a connection change is pending. If the change
+fails, returning to the previous workspace becomes available again.
 
 The compact Task summary begins with All, the sum across the five mutually exclusive
 statuses under the applied name, expression and route filters. Selecting All clears
