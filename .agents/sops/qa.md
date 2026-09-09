@@ -44,7 +44,7 @@ paste it into committed scripts or captured shell output.
 | Layout | 1440×900 desktop, 900×600 short window, 390×700 narrow window; no document-level horizontal overflow |
 | Popups | Every edge; resize while open; many options; long names; internal scrolling; Escape, outside click and Tab |
 | Keyboard | Arrow keys/Home/End follow visible active option; Enter applies; IME Enter does not submit prematurely |
-| Filters | Dropdowns/presets immediate; text blur/Enter; clear; invalid input and correction; counts match applied selectors |
+| Filters | Dropdowns/presets immediate; text blur/Enter; clear; invalid input and correction; status cards respect applied name/expression but ignore the Status selector; list totals include Status |
 | Navigation | Queue → filter → drawer → back/forward; URL and visible state agree |
 | Selection | Empty/partial/all checkbox; sorting retains selection; filtering clears selection; append keeps existing selection |
 | Columns | Independent resize; double-click fit; drag order; missing JSON paths blank; path casing preserved; reload restoration |

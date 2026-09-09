@@ -10,7 +10,7 @@ workspace, with reusable views for different experiments.
 The key features are:
 
 - **Queue progress at a glance:** Track pending, running, succeeded, failed, and
-  cancelled Tasks. Status counts follow the same filters as the Task list.
+  cancelled Tasks. Status counts follow the applied Task name and advanced filter, across all statuses; the Status selector narrows only the Task list and its total.
 - **Flexible result exploration:** Filter Task fields and nested values, or add
   custom columns such as `args.test_num` and `result.succ_rate`. Resize, reorder,
   and double-click columns to fit their contents.

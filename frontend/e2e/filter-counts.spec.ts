@@ -22,6 +22,16 @@ test('status cards follow applied filters and refresh with the list', async ({pa
   await expect(page.locator('.stats .pending strong')).toHaveText('2');
   await expect(page.locator('.stats .running strong')).toHaveText('1');
   for (const status of ['succeeded','failed','cancelled']) await expect(page.locator(`.stats .${status} strong`)).toHaveText('0');
+  await page.getByRole('combobox', {name:'All statuses'}).click();
+  await page.getByRole('option', {name:'running', exact:true}).click();
+  await expect(page).toHaveURL(/status=running/);
+  await expect(page.locator('.stats .pending strong')).toHaveText('2');
+  await expect(page.locator('.stats .running strong')).toHaveText('1');
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(1);
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveAttribute('data-task-id', 't_RUNNING12345');
+  await page.locator('.stats .pending').click();
+  await expect(page).toHaveURL(/status=pending/);
+  await expect(page.locator('.stats .running strong')).toHaveText('1');
   const before = filteredRequests;
   await page.getByRole('button', {name:'Refresh', exact:true}).click();
   await expect.poll(() => filteredRequests).toBeGreaterThanOrEqual(before + 6);
@@ -77,4 +87,25 @@ test('dropdowns and completed text edits apply without the Apply button', async 
   await expect.poll(() => new URL(page.url()).searchParams.get('filter')).toBe('"gpu-a100" in routes');
   await expect(page.getByRole('button', {name:'Apply', exact:true})).toBeVisible();
   await expect(page.getByRole('button', {name:'Delete all matching'})).toHaveCount(0);
+});
+
+test('Task name narrows all status cards while Status only narrows the list', async ({page}) => {
+  await page.request.post('http://127.0.0.1:18765/__test__/reset');
+  await page.goto('/');
+  await page.getByLabel('Server URL').fill('http://127.0.0.1:18765');
+  await page.getByRole('button', {name:'Connect', exact:true}).click();
+  await page.getByRole('heading', {name:'robotwin', exact:true}).click();
+  await page.getByLabel('Task name', {exact:true}).fill('train-policy');
+  await page.getByLabel('Task name', {exact:true}).press('Enter');
+  await expect(page.locator('.stats .pending strong')).toHaveText('0');
+  await expect(page.locator('.stats .running strong')).toHaveText('1');
+  await expect(page.locator('.stats .succeeded strong')).toHaveText('0');
+  await page.locator('.stats .pending').click();
+  await expect(page).toHaveURL(/status=pending/);
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
+  await expect(page.locator('.stats .running strong')).toHaveText('1');
+  await expect(page.getByText('Loaded 0 / 0 tasks', {exact:true})).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.stats .running strong')).toHaveText('1');
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
 });

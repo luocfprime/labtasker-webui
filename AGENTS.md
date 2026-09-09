@@ -40,7 +40,7 @@
 - Preserve breadcrumbs and the compact, information-dense layout. Do not reintroduce a duplicate queue heading or large decorative spacing.
 - Queue layout and named views are scoped by connection identity **and** queue. Never reintroduce a global columns fallback.
 - Dropdowns and presets apply immediately. Text filters apply on Enter or leaving the input group; Apply is a fallback. Respect IME composition.
-- Counts describe the same applied selectors as the list. Sorting preserves selection; changing the filter range clears it.
+- Status card counts use applied Task name and filter expressions, ignoring the Status selector; list totals also include the selected Status. Sorting preserves selection; changing the filter range clears it.
 - Browser history restores queue, applied filters and drawer consistently. Partial selection uses the native checkbox `indeterminate` property.
 - Resizing changes only the chosen column. Double-click fits content. Reordering preserves paths and uses a drop line, not a shaded target row.
 - Every popup must fit the viewport, support scrolling and Escape/outside dismissal, and remain usable with keyboard navigation. Check Safari/WebKit focus behavior, not only Chromium.

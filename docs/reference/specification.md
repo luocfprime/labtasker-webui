@@ -43,8 +43,12 @@ including when reauthenticating with another Server or token.
 
 ## Rendering and interaction
 
-The table uses cursor loading plus row virtualization. Counts cover the full applied
-selector, not just loaded rows. Scrolling older rows pauses list polling to avoid reordering
+The table uses cursor loading plus row virtualization. Status card counts cover all Tasks
+matching the applied Task name and advanced filter, ignoring the Status selector.
+Explicit status conditions inside the advanced filter remain effective. Selecting a
+Status changes the highlighted card, Task list and list total without narrowing the
+other cards. List totals include all applied selectors, not just loaded rows.
+Scrolling older rows pauses list polling to avoid reordering
 what the user is reading. Refresh explicitly returns to the top and refreshes data/counts.
 Resizing uses per-column widths and a filler for remaining space. JSON paths are read-only
 lookups; missing fields are blank.

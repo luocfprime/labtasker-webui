@@ -832,12 +832,12 @@ function Workspace({
     }
   }, [tasks.error, back]);
   const queueCounts = useQuery<Record<Status, number>>({
-    queryKey: ["queue-counts", queue, filters.status, filters.name, filters.filter],
+    queryKey: ["queue-counts", queue, filters.name, filters.filter],
     queryFn: async () => {
       const values = await Promise.all(
         statuses.map((status) => {
           const params = statusCountParams(filters, status);
-          return params === null ? Promise.resolve({count: 0}) : api<{ count: number }>(
+          return api<{ count: number }>(
             `/api/webui/queues/${encodeURIComponent(queue)}/tasks/count?${params}`,
           );
         }),
