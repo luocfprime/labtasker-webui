@@ -166,13 +166,3 @@ and installation of the built package without Node.js.
 ## License
 
 [Apache-2.0](https://github.com/luocfprime/labtasker-webui/blob/main/LICENSE), matching Labtasker.
-
-### Search Task names
-
-The Task name input supports case-insensitive subsequence search: `tr ev` or
-`ev tr` finds `train_model_eval`. Every whitespace-separated word must match.
-Press Enter or leave the input to apply; clearing it removes the name restriction.
-For a strict name match, use `name == "train_model_eval"` in Advanced filter.
-The Server applies the same search to the Task list and counts across the Queue,
-with the existing sorting preserved. This requires a Server supporting
-`name_fuzzy`; saved Task name inputs also use fuzzy matching.
