@@ -83,6 +83,13 @@ Task selection survives sorting, including browser Back/Forward through sort cha
 Applying or resetting a saved view also preserves selection when only sorting or
 column layout changes.
 Changing the filter range clears selection, including through browser history.
+The selection column remains pinned while the Task table scrolls horizontally.
+An explicit Task selection exposes Cancel, Requeue and Delete actions. Each action is
+enabled only when every selected Task has a compatible status, using the same rules as
+the Task drawer: Cancel accepts pending/running, Requeue accepts
+pending/failed/cancelled, and Delete rejects running. Disabled actions explain the
+required and incompatible statuses on hover or keyboard focus. Batch Cancel and Requeue
+retain failed Task IDs for retry while clearing successful IDs from the selection.
 Resizing uses per-column widths and a filler for remaining space. JSON paths are read-only
 lookups; missing fields are blank.
 

@@ -45,6 +45,7 @@ function LiveExecutionDuration({ task }: { task: Task }) {
 }
 
 type Status = "pending" | "running" | "succeeded" | "failed" | "cancelled";
+type SelectionAction = "cancel" | "requeue" | "delete";
 type Task = {
   id: string;
   queue: string;
@@ -132,6 +133,29 @@ const statuses: Status[] = [
   "failed",
   "cancelled",
 ];
+const selectionActionStatuses: Record<SelectionAction, readonly Status[]> = {
+  cancel: ["pending", "running"],
+  requeue: ["pending", "failed", "cancelled"],
+  delete: ["pending", "succeeded", "failed", "cancelled"],
+};
+function selectionActionReason(
+  action: SelectionAction,
+  selectedTasks: Task[],
+  selectedCount: number,
+) {
+  if (selectedTasks.length !== selectedCount)
+    return m.workspace.unavailableSelectedTasks;
+  const allowed = selectionActionStatuses[action];
+  const incompatible = statuses
+    .map(status => ({
+      status,
+      count: selectedTasks.filter(task => task.status === status && !allowed.includes(status)).length,
+    }))
+    .filter(item => item.count > 0)
+    .map(item => `${item.count} ${item.status}`);
+  if (!incompatible.length) return undefined;
+  return `${m.workspace.actionRequirement[action]} ${m.workspace.ineligibleSelection(incompatible.join(", "))}`;
+}
 const taskColumns = [
   "status",
   "task",
@@ -915,6 +939,89 @@ function Workspace({
   }, [tasks.data]);
   const allChecked = all.length > 0 && all.every((t) => selected.has(t.id));
   const partiallyChecked = !allChecked && all.some(task => selected.has(task.id));
+  const selectedTasks = useMemo(
+    () => all.filter(task => selected.has(task.id)),
+    [all, selected],
+  );
+  const selectionKey = [...selected].sort().join("\n");
+  const [selectionError, setSelectionError] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
+  const selectionSubmitting = useRef(false);
+  const selectionMutation = useMutation({
+    mutationKey: ["selection-action", queue],
+    mutationFn: async ({
+      action,
+      targets,
+    }: {
+      action: Exclude<SelectionAction, "delete">;
+      targets: Task[];
+    }) => {
+      const failed: { id: string; message: string }[] = [];
+      let cursor = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(4, targets.length) }, async () => {
+          while (cursor < targets.length) {
+            const target = targets[cursor++];
+            try {
+              await api(
+                `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(target.id)}/${action}`,
+                { method: "POST" },
+              );
+            } catch (reason) {
+              failed.push({
+                id: target.id,
+                message: reason instanceof Error ? reason.message : String(reason),
+              });
+            }
+          }
+        }),
+      );
+      return { action, targets, failed };
+    },
+    onSuccess: ({ action, targets, failed }) => {
+      const failedIds = new Set(failed.map(item => item.id));
+      const completed = targets.length - failed.length;
+      setSelected(current => {
+        const next = new Set(current);
+        targets.forEach(target => {
+          if (!failedIds.has(target.id)) next.delete(target.id);
+        });
+        return next;
+      });
+      if (failed.length) {
+        setSelectionError({
+          key: [...failedIds].sort().join("\n"),
+          message: `${m.workspace.batchActionPartial(completed, action === "cancel" ? "cancelled" : "requeued", failed.length)} ${failed.map(item => `${item.id}: ${item.message}`).join(" ")}`,
+        });
+      } else {
+        setSelectionError(null);
+        notify(m.workspace.batchActionComplete(completed, action === "cancel" ? "cancelled" : "requeued"));
+      }
+      void tasks.refetch();
+      void qc.invalidateQueries({ queryKey: ["queues"] });
+      void qc.invalidateQueries({ queryKey: ["queue-counts", queue] });
+      void qc.invalidateQueries({ queryKey: ["matching-count", queue] });
+      targets.forEach(target =>
+        void qc.invalidateQueries({ queryKey: ["task", queue, target.id] }),
+      );
+    },
+    onSettled: () => { selectionSubmitting.current = false; },
+  });
+  const actionReason = (action: SelectionAction) =>
+    selectionMutation.isPending
+      ? m.workspace.actionPending
+      : selectionActionReason(action, selectedTasks, selected.size);
+  const runSelectionAction = (action: Exclude<SelectionAction, "delete">) => {
+    if (selectionSubmitting.current || selectionActionReason(action, selectedTasks, selected.size)) return;
+    selectionSubmitting.current = true;
+    setSelectionError(null);
+    selectionMutation.mutate({ action, targets: selectedTasks });
+  };
+  const cancelReason = actionReason("cancel");
+  const requeueReason = actionReason("requeue");
+  const deleteReason = actionReason("delete");
   const toggle = (id: string) =>
     setSelected((old) => {
       const n = new Set(old);
@@ -1302,16 +1409,40 @@ function Workspace({
       )}
       {selected.size > 0 && (
         <div className="selection">
-          {m.workspace.selected(selected.size)}{" "}
-          <button
-            className="danger-link"
-            onClick={() => setConfirm({ task_ids: [...selected] })}
-          >
-            {m.workspace.deleteSelected}
-          </button>
-          <button className="link" onClick={() => setSelected(new Set())}>
-            {m.common.clear}
-          </button>
+          <div className="selection-summary">
+            <span>{m.workspace.selected(selected.size)}</span>
+            {selectionError?.key === selectionKey && (
+              <small role="alert">{selectionError.message}</small>
+            )}
+          </div>
+          <div className="selection-actions">
+            <span className="selection-action-hint" data-tooltip={cancelReason}
+              tabIndex={cancelReason ? 0 : undefined} aria-label={cancelReason}>
+              <button className="link" disabled={!!cancelReason}
+                onClick={() => runSelectionAction("cancel")}>
+                {selectionMutation.isPending && selectionMutation.variables?.action === "cancel"
+                  ? m.workspace.cancellingSelected : m.workspace.cancelSelected}
+              </button>
+            </span>
+            <span className="selection-action-hint" data-tooltip={requeueReason}
+              tabIndex={requeueReason ? 0 : undefined} aria-label={requeueReason}>
+              <button className="link" disabled={!!requeueReason}
+                onClick={() => runSelectionAction("requeue")}>
+                {selectionMutation.isPending && selectionMutation.variables?.action === "requeue"
+                  ? m.workspace.requeuingSelected : m.workspace.requeueSelected}
+              </button>
+            </span>
+            <span className="selection-action-hint" data-tooltip={deleteReason}
+              tabIndex={deleteReason ? 0 : undefined} aria-label={deleteReason}>
+              <button className="danger-link" disabled={!!deleteReason}
+                onClick={() => setConfirm({ task_ids: [...selected] })}>
+                {m.workspace.deleteSelected}
+              </button>
+            </span>
+            <button className="link" onClick={() => setSelected(new Set())}>
+              {m.common.clear}
+            </button>
+          </div>
         </div>
       )}
       <StaleDataBanner

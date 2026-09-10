@@ -73,7 +73,29 @@ export const messages = {
     resolving: "Resolving…",
     noFilterMatches: "No Tasks match the current filter.",
     selected: (count: number) => `${plural(count, "Task")} selected`,
+    cancelSelected: "Cancel selected",
+    cancellingSelected: "Cancelling selected…",
+    requeueSelected: "Requeue selected",
+    requeuingSelected: "Requeuing selected…",
     deleteSelected: "Delete selected",
+    actionPending: "Wait for the current selected-Task action to finish.",
+    unavailableSelectedTasks:
+      "Some selected Task statuses are no longer available. Refresh or clear the selection and select them again.",
+    actionRequirement: {
+      cancel: "Cancel requires every selected Task to be pending or running.",
+      requeue:
+        "Requeue requires every selected Task to be pending, failed, or cancelled.",
+      delete: "Delete requires every selected Task not to be running.",
+    },
+    ineligibleSelection: (statuses: string) =>
+      `Ineligible selection: ${statuses}.`,
+    batchActionComplete: (count: number, result: "cancelled" | "requeued") =>
+      `${plural(count, "Task")} ${result}.`,
+    batchActionPartial: (
+      completed: number,
+      result: "cancelled" | "requeued",
+      failed: number,
+    ) => `${plural(completed, "Task")} ${result}; ${plural(failed, "Task")} failed and ${failed === 1 ? "remains" : "remain"} selected.`,
     loadingTasks: "Loading Tasks…",
     emptyTitle: "No matching Tasks",
     emptyBody: "Try changing the active selectors or filter expression.",

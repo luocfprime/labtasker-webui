@@ -61,3 +61,20 @@ test('header checkbox distinguishes none, some and all loaded tasks', async ({pa
   await expect(header).toHaveJSProperty('indeterminate', false);
   await expect(rows.first()).not.toBeChecked();
 });
+
+test('task selection stays available while the table scrolls horizontally', async ({page}) => {
+  const table = page.locator('.table-wrap');
+  const header = page.getByRole('checkbox', {name:'Select loaded tasks', exact:true});
+  const row = page.locator('tbody input[type="checkbox"]').first();
+
+  await table.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+
+  await expect.poll(async () => header.evaluate((element) => {
+    const checkbox = element.getBoundingClientRect();
+    const viewport = element.closest('.table-wrap')!.getBoundingClientRect();
+    return checkbox.left >= viewport.left && checkbox.right <= viewport.right;
+  })).toBe(true);
+  await expect(row).toBeVisible();
+  await row.check();
+  await expect(page.locator('.selection')).toContainText('1 Task selected');
+});

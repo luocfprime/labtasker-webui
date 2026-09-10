@@ -640,7 +640,7 @@ button:disabled {
   font-size: var(--text-body);
 }
 .selection {
-  height: 45px;
+  min-height: 45px;
   border: 1px solid #a9caef;
   background: #f0f7ff;
   border-radius: 6px;
@@ -651,8 +651,24 @@ button:disabled {
   gap: 10px;
   font-size: var(--text-body);
 }
-.selection .danger-link {
+.selection-summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.selection-summary small {
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+.selection-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.selection-action-hint {
+  display: inline-flex;
 }
 .table-wrap {
   background: #fff;
@@ -1228,6 +1244,23 @@ td code {
 .virtual-table td {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.virtual-table th[data-column-id="select"],
+.virtual-table td[data-column-id="select"] {
+  position: sticky;
+  left: 0;
+  box-shadow: 1px 0 var(--line);
+}
+.virtual-table th[data-column-id="select"] {
+  z-index: 3;
+}
+.virtual-table td[data-column-id="select"] {
+  z-index: 1;
+  background: #fff;
+}
+.virtual-table tbody tr:hover td[data-column-id="select"],
+.virtual-table tbody tr.chosen td[data-column-id="select"] {
+  background: #f4f8fd;
 }
 .virtual-table .task-name {
   max-width: 100%;
