@@ -52,6 +52,9 @@ test("large list virtualizes, preserves reading position, resizes columns and fo
     exact: true,
   });
   const headers = page.locator(".virtual-table thead th:not(.table-filler)");
+  const taskColumnIndex = await headers.evaluateAll((cells) =>
+    cells.findIndex((cell) => cell.getAttribute("data-column-id") === "task"),
+  );
   const widths = () => headers.evaluateAll((cells) => cells.map((cell) => cell.getBoundingClientRect().width));
   const beforeWidths = await widths();
   const initialWidth = Number(await handle.getAttribute("aria-valuenow"));
@@ -74,13 +77,13 @@ test("large list virtualizes, preserves reading position, resizes columns and fo
   expect(coverage.table).toBeGreaterThanOrEqual(coverage.container - 1);
   expect(coverage.end).toBeCloseTo(coverage.tableEnd, 0);
   for (let i = 0; i < beforeWidths.length; i++) {
-    expect(afterWidths[i] - beforeWidths[i]).toBeCloseTo(i === 2 ? 60 : 0, 0);
+    expect(afterWidths[i] - beforeWidths[i]).toBeCloseTo(i === taskColumnIndex ? 60 : 0, 0);
   }
   await handle.focus();
   await page.keyboard.press("ArrowLeft");
   const shrunkWidths = await widths();
   for (let i = 0; i < beforeWidths.length; i++) {
-    expect(shrunkWidths[i] - afterWidths[i]).toBeCloseTo(i === 2 ? -16 : 0, 0);
+    expect(shrunkWidths[i] - afterWidths[i]).toBeCloseTo(i === taskColumnIndex ? -16 : 0, 0);
   }
   await page.keyboard.press("ArrowRight");
   await page.reload();
@@ -94,7 +97,7 @@ test("large list virtualizes, preserves reading position, resizes columns and fo
   expect(fitted).toBeLessThan(initialWidth + 60);
   const afterFit = await widths();
   for (let i = 0; i < beforeFit.length; i++) {
-    if (i !== 2) expect(afterFit[i]).toBeCloseTo(beforeFit[i], 0);
+    if (i !== taskColumnIndex) expect(afterFit[i]).toBeCloseTo(beforeFit[i], 0);
   }
   await handle.press("ArrowRight");
   await handle.dblclick();

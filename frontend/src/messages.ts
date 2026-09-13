@@ -110,6 +110,7 @@ export const messages = {
   },
   columns: {
     status: "Status",
+    progress: "Progress",
     task: "Task",
     attempt: "Attempt",
     priority: "Priority",
@@ -118,6 +119,10 @@ export const messages = {
     updated: "Updated",
     duration: "Duration",
     name: "Name",
+  },
+  progress: {
+    completed: "Completed",
+    total: "Total",
   },
   json: {
     object: "Object",
@@ -157,6 +162,7 @@ export const messages = {
     runId: "Run ID",
     arguments: "Arguments",
     metadata: "Metadata",
+    progress: "Progress",
     result: "Result",
     rawTask: "Raw Task",
   },

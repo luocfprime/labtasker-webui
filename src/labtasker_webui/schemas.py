@@ -64,6 +64,9 @@ class TaskResponse(BaseModel):
     max_attempts: int
     routes: list[str]
     result: dict[str, Any]
+    progress: dict[str, Any] | None = None
+    progress_updated_at: datetime | None = None
+    progress_attempt: int | None = None
     last_error: LastErrorResponse | None
     last_route: str | None
     created_at: datetime

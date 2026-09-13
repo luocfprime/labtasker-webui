@@ -3,7 +3,7 @@ import { workspacePreferences, saveWorkspacePreferences } from "./workspacePrefe
 import { api, ApiRequestError } from "./api";
 import { QueueWorkerSummary, RouteSidebar, RouteChips, RouteCountsContext, WorkersPanel, useRouteCounts } from "./Observations";
 import { effectiveTaskFilter } from "./countFilters";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   useInfiniteQuery,
@@ -29,6 +29,7 @@ import { Views } from "./Views";
 import { Select } from "./Select";
 import { messages as m } from "./messages";
 import { ServerVersionWarning } from "./ServerVersionWarning";
+import { useAnchoredPanel } from "./useAnchoredPanel";
 
 export function PriorityValue({ value }: { value: number }) {
   return (
@@ -58,6 +59,9 @@ type Task = {
   max_attempts: number;
   routes: string[];
   result: Record<string, unknown>;
+  progress: Record<string, unknown> | null;
+  progress_updated_at: string | null;
+  progress_attempt: number | null;
   last_error: null | {
     type: string;
     message: string;
@@ -158,6 +162,7 @@ function selectionActionReason(
 }
 const taskColumns = [
   "status",
+  "progress",
   "task",
   "attempt",
   "priority",
@@ -167,6 +172,7 @@ const taskColumns = [
   "duration",
 ] as const;
 type TaskColumn = (typeof taskColumns)[number];
+const PROGRESS_MIN_WIDTH = 56;
 const EMPTY_TASKS: Task[] = [];
 export const adaptivePolling =
   (base: number) => (query: { state: { fetchFailureCount: number } }) => {
@@ -220,6 +226,142 @@ export function TimeValue({
           })()
         : fmt(value)}
     </time>
+  );
+}
+
+export function progressPercentage(
+  progress: Record<string, unknown> | null | undefined,
+): number | null {
+  if (!progress) return null;
+  const completed = progress.completed;
+  const total = progress.total;
+  if (
+    typeof completed !== "number" ||
+    typeof total !== "number" ||
+    !Number.isFinite(completed) ||
+    !Number.isFinite(total) ||
+    completed < 0 ||
+    total <= 0 ||
+    completed > total
+  ) {
+    return null;
+  }
+  const percentage = (completed / total) * 100;
+  // Correct division/multiplication roundoff at integer percentage boundaries.
+  const tolerance = Number.EPSILON * Math.max(1, percentage);
+  return Math.min(completed < total ? 99 : 100, Math.floor(percentage + tolerance));
+}
+
+export function TaskProgressCell({
+  task,
+}: {
+  task: Pick<Task, "status" | "progress" | "progress_attempt" | "progress_updated_at">;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+  const percent = progressPercentage(task.progress);
+  const open = percent !== null && (hovered || focused || pinned);
+  useAnchoredPanel(open, trigger, panel, 320);
+
+  useEffect(() => {
+    if (!pinned) return;
+    const dismiss = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !trigger.current?.contains(event.target) &&
+        !panel.current?.contains(event.target)
+      ) {
+        setPinned(false);
+        setHovered(false);
+        setFocused(false);
+      }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [pinned]);
+
+  if (task.status !== "running") return null;
+  if (percent === null || task.progress === null) {
+    return <span className="progress-unavailable">—</span>;
+  }
+  const completed = task.progress.completed as number;
+  const total = task.progress.total as number;
+  return (
+    <span className="task-progress"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        trigger.current?.focus();
+        setPinned(false);
+        setHovered(false);
+        setFocused(false);
+      }}>
+      <button
+        ref={trigger}
+        type="button"
+        className="progress-trigger"
+        aria-label={`Show Task progress: ${percent}%`}
+        aria-expanded={open}
+        aria-describedby={open ? panelId : undefined}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onClick={(event) => {
+          event.stopPropagation();
+          setPinned((value) => !value);
+        }}
+      >
+        <span
+          className="progress-ring"
+          role="progressbar"
+          aria-label={`Task progress: ${percent}%`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+        >
+          <svg viewBox="0 0 36 36" aria-hidden="true">
+            <circle className="progress-ring-track" cx="18" cy="18" r="15.5" />
+            <circle
+              className="progress-ring-value"
+              cx="18"
+              cy="18"
+              r="15.5"
+              pathLength="100"
+              style={{ strokeDasharray: `${percent} ${100 - percent}` }}
+            />
+          </svg>
+        </span>
+      </button>
+      {open && (
+        <div
+          ref={panel}
+          id={panelId}
+          className="progress-popover"
+          role="tooltip"
+          aria-label="Task progress details"
+        >
+          <strong>{percent}%</strong>
+          <dl>
+            <dt>{m.progress.completed}</dt>
+            <dd>{completed}</dd>
+            <dt>{m.progress.total}</dt>
+            <dd>{total}</dd>
+            <dt>{m.task.attempt}</dt>
+            <dd>{task.progress_attempt ?? "—"}</dd>
+            <dt>{m.task.updated}</dt>
+            <dd><TimeValue value={task.progress_updated_at} /></dd>
+          </dl>
+          <pre>{JSON.stringify(task.progress, null, 2)}</pre>
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -703,7 +845,7 @@ function Workspace({
             ([key, value]) =>
               (taskColumns.includes(key as TaskColumn) || (key.startsWith("path:") && !!pathParts(key.slice(5)))) &&
               typeof value === "number" &&
-              value >= 60 &&
+              value >= (key === "progress" ? PROGRESS_MIN_WIDTH : 60) &&
               value <= 10000,
           ),
         ) as Record<string, number>;
@@ -1073,8 +1215,17 @@ function Workspace({
       },
       {
         id: "status",
+        size: 117,
+        minSize: 104,
         header: m.columns.status,
         cell: ({ row }) => <Badge status={row.original.status} />,
+      },
+      {
+        id: "progress",
+        size: 88,
+        minSize: PROGRESS_MIN_WIDTH,
+        header: m.columns.progress,
+        cell: ({ row }) => <TaskProgressCell task={row.original} />,
       },
       {
         id: "task",
@@ -1094,12 +1245,14 @@ function Workspace({
       },
       {
         id: "attempt",
+        size: 83,
         header: m.columns.attempt,
         cell: ({ row }) =>
           `${row.original.attempt} / ${row.original.max_attempts}`,
       },
       {
         id: "priority",
+        size: 79,
         header: m.columns.priority,
         accessorKey: "priority",
         cell: ({ row }) => <PriorityValue value={row.original.priority} />,
@@ -1114,16 +1267,19 @@ function Workspace({
       },
       {
         id: "created",
+        size: 103,
         header: m.columns.created,
         cell: ({ row }) => <TimeValue value={row.original.created_at} short />,
       },
       {
         id: "updated",
+        size: 103,
         header: m.columns.updated,
         cell: ({ row }) => <TimeValue value={row.original.updated_at} short />,
       },
       {
         id: "duration",
+        size: 86,
         header: m.columns.duration,
         cell: ({ row }) => (
           <LiveExecutionDuration task={row.original} />
@@ -1512,8 +1668,8 @@ function Workspace({
                         aria-orientation="vertical"
                         aria-label={`Resize ${header.column.columnDef.header}`}
                         aria-valuenow={header.column.getSize()}
-                        aria-valuemin={60}
-                        aria-valuemax={10000}
+                        aria-valuemin={header.column.columnDef.minSize ?? 60}
+                        aria-valuemax={header.column.columnDef.maxSize ?? 10000}
                         tabIndex={0}
                         onMouseDown={header.getResizeHandler()}
                         onTouchStart={header.getResizeHandler()}
@@ -1524,10 +1680,12 @@ function Workspace({
                             event.key === "ArrowRight"
                           ) {
                             event.preventDefault();
+                            const minSize = header.column.columnDef.minSize ?? 60;
+                            const maxSize = header.column.columnDef.maxSize ?? 10000;
                             const size = Math.min(
-                              10000,
+                              maxSize,
                               Math.max(
-                                60,
+                                minSize,
                                 header.column.getSize() +
                                   (event.key === "ArrowRight" ? 16 : -16),
                               ),
@@ -1564,7 +1722,7 @@ function Workspace({
                 className={taskId === row.original.id ? "chosen" : ""}
                 onClick={() => openTask(row.original.id)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
+                  if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
                     event.preventDefault();
                     openTask(row.original.id);
                   }
@@ -1756,12 +1914,23 @@ export function JsonNode({
   );
 }
 
-function JsonBlock({ title, value }: { title: string; value: unknown }) {
+function JsonBlock({
+  title,
+  value,
+  meta,
+}: {
+  title: string;
+  value: unknown;
+  meta?: ReactNode;
+}) {
   const [raw, setRaw] = useState(false);
   return (
     <section className="detail-section">
       <div className="section-title">
-        <h3>{title}</h3>
+        <div className="section-heading">
+          <h3>{title}</h3>
+          {meta && <span className="section-meta">{meta}</span>}
+        </div>
         <button className="link" onClick={() => setRaw(!raw)}>
           {raw ? m.json.tree : m.json.raw}
         </button>
@@ -2039,6 +2208,18 @@ export function TaskDrawer({
                   )}
                   <JsonBlock title={m.task.arguments} value={t.args} />
                   <JsonBlock title={m.task.metadata} value={t.metadata} />
+                  {t.progress !== null && (
+                    <JsonBlock
+                      title={m.task.progress}
+                      value={t.progress}
+                      meta={
+                        <>
+                          {m.task.attempt} {t.progress_attempt ?? "—"} ·{" "}
+                          <TimeValue value={t.progress_updated_at} />
+                        </>
+                      }
+                    />
+                  )}
                   <JsonBlock title={m.task.result} value={t.result} />
                   <JsonBlock title={m.task.rawTask} value={t} />
                 </div>

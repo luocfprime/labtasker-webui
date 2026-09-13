@@ -587,7 +587,7 @@ button:disabled {
 }
 .column-menu > div {
   position: fixed;
-  z-index: 6;
+  z-index: 20;
   left: 0;
   top: calc(100% + 6px);
   width: 176px;
@@ -722,6 +722,103 @@ td code,
   font-weight: 400;
   line-height: 1.5;
 }
+td[data-column-id="progress"],
+th[data-column-id="progress"] {
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
+.task-progress {
+  display: inline-grid;
+  place-items: center;
+}
+.progress-trigger {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--blue);
+}
+.progress-trigger:hover {
+  background: #1769d20a;
+}
+.progress-ring {
+  position: relative;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+}
+.progress-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.progress-ring circle {
+  fill: none;
+  stroke-width: 5.142857;
+}
+.progress-ring-track {
+  stroke: #e6e9ed;
+}
+.progress-ring-value {
+  stroke: color-mix(in srgb, currentColor 82%, #fff);
+  stroke-linecap: round;
+  transition: stroke-dasharray 250ms ease;
+}
+.progress-unavailable {
+  color: var(--muted);
+}
+.progress-popover {
+  position: fixed;
+  z-index: 10000;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #d5dbe3;
+  border-radius: 7px;
+  background: #fff;
+  color: #263140;
+  box-shadow: 0 8px 24px #18223026;
+  text-align: left;
+  white-space: normal;
+}
+.progress-popover > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--blue);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.progress-popover dl {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 5px 10px;
+  margin: 0 0 10px;
+}
+.progress-popover dt {
+  color: var(--muted);
+}
+.progress-popover dd {
+  margin: 0;
+}
+.progress-popover pre {
+  max-height: 220px;
+  margin: 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border: 1px solid #e4e7eb;
+  border-radius: 5px;
+  background: #f8fafc;
+  font: 11px/1.5 var(--font-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .chips {
   display: flex;
   gap: 3px;
@@ -828,8 +925,24 @@ td code,
   display: flex;
   align-items: center;
 }
-.section-title h3 {
+.section-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
   margin-right: auto;
+}
+.section-heading h3 {
+  margin: 0;
+}
+.section-meta {
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-ring-value {
+    transition: none;
+  }
 }
 .detail-section pre {
   background: #f5f7f9;

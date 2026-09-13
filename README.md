@@ -10,7 +10,10 @@ workspace, with reusable views for different experiments.
 The key features are:
 
 - **Queue progress at a glance:** Track pending, running, succeeded, failed, and
-  cancelled Tasks. Status counts follow the applied Task name and advanced filter, across all statuses; the Status selector narrows only the Task list and its total.
+  cancelled Tasks. Running Tasks can show a compact circular completion indicator
+  from their latest reported progress. Status counts follow the applied Task name
+  and advanced filter, across all statuses; the Status selector narrows only the
+  Task list and its total.
 - **Routes and Workers:** Collapse route navigation when you need more table space.
   Inspect Idle/Busy Worker counts and last-seen reports; include inactive routes when
   reviewing historical work. These features require Server 2.2 or later; Worker
@@ -85,7 +88,26 @@ The list loads more Tasks as you scroll and preserves existing selections.
 While reading older rows, background refresh does not reorder the list.
 Returning to the top resumes live refresh; **Refresh** updates it explicitly.
 Click a Task to open its details. Dates use local time, with full timestamps
-available on hover.
+available on hover. When a Task has reported progress, its retained progress JSON,
+report attempt, and update time appear before the final Result section.
+
+Workers may opt into the circular indicator by reporting finite numeric
+`completed` and `total` values:
+
+```python
+labtasker.report_progress(
+    {
+        "completed": completed_cases,
+        "total": total_cases,
+        "metrics": {"validation_loss": validation_loss},
+    }
+)
+```
+
+These names are a display convention, not a Server schema. Other progress keys
+remain user-defined. A running Task without a valid `completed / total` ratio
+shows `—`; non-running rows leave the Progress column blank. The Progress column
+starts compact and can be resized like the other data columns.
 
 ## Project profiles
 

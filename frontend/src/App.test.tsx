@@ -3,13 +3,80 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DeleteDialog,
   PriorityValue,
+  TaskProgressCell,
   ExecutionDuration,
   JsonNode,
   StaleDataBanner,
   TimeValue,
   adaptivePolling,
   formatDuration,
+  progressPercentage,
 } from "./App";
+
+describe("TaskProgressCell", () => {
+  it("accepts finite numeric completion and floors the percentage", () => {
+    expect(progressPercentage({ completed: 42.9, total: 100 })).toBe(42);
+    expect(progressPercentage({ completed: 0.2, total: 1 })).toBe(20);
+    for (const completed of [29, 57, 58]) {
+      expect(progressPercentage({ completed, total: 100 })).toBe(completed);
+    }
+    expect(progressPercentage({ completed: 0.29, total: 1 })).toBe(29);
+    expect(progressPercentage({ completed: 28.999999, total: 100 })).toBe(28);
+    expect(progressPercentage({ completed: 1 - Number.EPSILON, total: 1 })).toBe(99);
+    expect(progressPercentage({ completed: Number.MAX_VALUE, total: Number.MAX_VALUE })).toBe(100);
+    expect(progressPercentage({ completed: 101, total: 100 })).toBeNull();
+    expect(progressPercentage({ completed: -1, total: 100 })).toBeNull();
+    expect(progressPercentage({ completed: 1, total: 0 })).toBeNull();
+    expect(progressPercentage({ completed: true, total: 1 })).toBeNull();
+    expect(progressPercentage({ metrics: { loss: 0.5 } })).toBeNull();
+  });
+
+  it("renders only the running determinate ring or fallback dash", () => {
+    const { container, rerender } = render(
+      <TaskProgressCell
+        task={{
+          status: "running",
+          progress: { completed: 3, total: 4 },
+          progress_attempt: 2,
+          progress_updated_at: "2026-09-08T00:00:00Z",
+        }}
+      />,
+    );
+    expect(screen.getByRole("progressbar", { name: "Task progress: 75%" })).not.toHaveTextContent(
+      "75",
+    );
+    const trigger = screen.getByRole("button", { name: "Show Task progress: 75%" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("tooltip", { name: "Task progress details" })).toBeVisible();
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("tooltip", { name: "Task progress details" })).toBeNull();
+
+    rerender(
+      <TaskProgressCell
+        task={{
+          status: "running",
+          progress: { completed: 5, total: 4 },
+          progress_attempt: 2,
+          progress_updated_at: "2026-09-08T00:00:00Z",
+        }}
+      />,
+    );
+    expect(container).toHaveTextContent("—");
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+
+    rerender(
+      <TaskProgressCell
+        task={{
+          status: "succeeded",
+          progress: { completed: 4, total: 4 },
+          progress_attempt: 2,
+          progress_updated_at: "2026-09-08T00:00:00Z",
+        }}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+});
 
 describe("TimeValue", () => {
   it("renders local time with exact UTC and zone in the tooltip", () => {

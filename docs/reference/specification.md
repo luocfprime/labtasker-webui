@@ -93,6 +93,38 @@ retain failed Task IDs for retry while clearing successful IDs from the selectio
 Resizing uses per-column widths and a filler for remaining space. JSON paths are read-only
 lookups; missing fields are blank.
 
+Default Task column widths are Status 117 px, Progress 88 px, Attempt 83 px,
+Priority 79 px, Created and Updated 103 px, and Duration 86 px. Saved widths
+continue to override these defaults within their connection and Queue scope.
+Progress can be resized down to 56 px, and this minimum width survives reload.
+
+The built-in Progress column is 88 px wide by default and centered. It retains
+the table's column-resizing behavior. Non-running Task rows leave it blank. A
+running Task shows a 14 px circular progress indicator only
+when its `progress` object contains finite numeric `completed` and `total`
+values with `0 <= completed <= total` and `total > 0`. The accessible value and
+popover show the floor of `completed / total * 100`, correcting floating-point
+roundoff at integer boundaries (29 of 100 shows 29%). Incomplete progress never
+shows 100%. The compact ring has no
+center text, follows the primary UI color and transitions over 250 ms. Other
+running Tasks show `—`, including Tasks without progress, incomplete display fields
+and values above the declared total. The column is not sortable. It follows the
+existing Task-list polling and pause rules rather than creating another refresh
+loop. The Status column has a 104 px minimum so every status badge remains fully
+visible, including when an older saved layout requested a narrower width.
+
+Hovering or focusing the ring opens a viewport-contained summary with the exact
+completed and total values, progress attempt, Server report time and a generic
+JSON preview. Clicking pins the same summary until an outside interaction or
+Escape. Clicking inside the summary does not open the Task drawer. Escape works
+from the summary's contents and returns focus to the ring. Task row keyboard
+navigation only handles keys on the row itself; Space on its checkbox toggles
+selection without opening details. The UI assigns no meaning to other progress keys. Task details show a
+Progress JSON section immediately before Result whenever progress is non-null,
+including for terminal Tasks whose last snapshot was retained. Its heading
+shows the Server-owned attempt and report time. Null progress adds no details
+section.
+
 The Task name input uses the upstream `name_fuzzy` selector: case-insensitive
 Unicode subsequences, split on whitespace, with every word required and word
 order unrestricted. Empty or whitespace-only searches add no restriction.

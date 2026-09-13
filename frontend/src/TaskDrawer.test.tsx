@@ -25,6 +25,9 @@ beforeEach(() => {
         max_attempts: 3,
         routes: ["gpu"],
         result: {},
+        progress: null,
+        progress_updated_at: null,
+        progress_attempt: null,
         last_error: null,
         last_route: null,
         created_at: "2026-09-08T00:00:00Z",
@@ -70,5 +73,43 @@ describe("TaskDrawer keyboard behavior", () => {
     const close = renderDrawer();
     fireEvent.keyDown(screen.getByLabelText("Task details"), { key: "Escape" });
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("shows retained progress before the result with Server metadata", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "t_one",
+        queue: "robotwin",
+        status: "succeeded",
+        name: "evaluate",
+        args: {},
+        metadata: {},
+        priority: 1,
+        attempt: 1,
+        max_attempts: 3,
+        routes: ["gpu"],
+        result: { score: 0.9 },
+        progress: { completed: 8, total: 8, metrics: { loss: 0.2 } },
+        progress_updated_at: "2026-09-08T00:01:00Z",
+        progress_attempt: 1,
+        last_error: null,
+        last_route: "gpu",
+        created_at: "2026-09-08T00:00:00Z",
+        updated_at: "2026-09-08T00:01:00Z",
+        started_at: "2026-09-08T00:00:00Z",
+        finished_at: "2026-09-08T00:01:00Z",
+      }),
+    } as Response);
+    renderDrawer();
+    const progress = await screen.findByRole("heading", { name: "Progress" });
+    const result = screen.getByRole("heading", { name: "Result" });
+    const progressSection = progress.closest("section");
+    expect(progressSection).toHaveTextContent("Attempt 1");
+    expect(progressSection).toHaveTextContent("loss");
+    expect(
+      progress.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
