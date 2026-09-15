@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DeleteDialog,
   PriorityValue,
@@ -10,8 +10,15 @@ import {
   TimeValue,
   adaptivePolling,
   formatDuration,
+  formatEstimatedDuration,
+  progressEta,
   progressPercentage,
 } from "./App";
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("TaskProgressCell", () => {
   it("accepts finite numeric completion and floors the percentage", () => {
@@ -36,6 +43,8 @@ describe("TaskProgressCell", () => {
       <TaskProgressCell
         task={{
           status: "running",
+          attempt: 2,
+          started_at: "2026-09-08T00:00:00Z",
           progress: { completed: 3, total: 4 },
           progress_attempt: 2,
           progress_updated_at: "2026-09-08T00:00:00Z",
@@ -47,14 +56,16 @@ describe("TaskProgressCell", () => {
     );
     const trigger = screen.getByRole("button", { name: "Show Task progress: 75%" });
     fireEvent.click(trigger);
-    expect(screen.getByRole("tooltip", { name: "Task progress details" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Task progress details" })).toBeVisible();
     fireEvent.keyDown(trigger, { key: "Escape" });
-    expect(screen.queryByRole("tooltip", { name: "Task progress details" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Task progress details" })).toBeNull();
 
     rerender(
       <TaskProgressCell
         task={{
           status: "running",
+          attempt: 2,
+          started_at: "2026-09-08T00:00:00Z",
           progress: { completed: 5, total: 4 },
           progress_attempt: 2,
           progress_updated_at: "2026-09-08T00:00:00Z",
@@ -68,6 +79,8 @@ describe("TaskProgressCell", () => {
       <TaskProgressCell
         task={{
           status: "succeeded",
+          attempt: 2,
+          started_at: "2026-09-08T00:00:00Z",
           progress: { completed: 4, total: 4 },
           progress_attempt: 2,
           progress_updated_at: "2026-09-08T00:00:00Z",
@@ -75,6 +88,61 @@ describe("TaskProgressCell", () => {
       />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("anchors a derived ETA to the latest progress report", () => {
+    expect(
+      progressEta(
+        {
+          status: "running",
+          attempt: 1,
+          started_at: "2026-09-08T00:00:00Z",
+          progress: { completed: 25, total: 100 },
+          progress_attempt: 1,
+          progress_updated_at: "2026-09-08T00:10:00Z",
+        },
+        Date.parse("2026-09-08T00:12:00Z"),
+      ),
+    ).toEqual({ kind: "remaining", milliseconds: 28 * 60_000, reported: false });
+  });
+
+  it("prefers a reported ETA and renders a compact progress JSON tree", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-08T00:12:00Z");
+    render(
+      <TaskProgressCell
+        task={{
+          status: "running",
+          attempt: 1,
+          started_at: "2026-09-08T00:00:00Z",
+          progress: {
+            completed: 25,
+            total: 100,
+            eta: 600,
+            metrics: { validation_loss: 0.82 },
+          },
+          progress_attempt: 1,
+          progress_updated_at: "2026-09-08T00:10:00Z",
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show Task progress: 25%" }));
+    const popover = screen.getByRole("dialog", { name: "Task progress details" });
+    expect(popover).toHaveTextContent("Duration");
+    expect(popover).toHaveTextContent("~12m 0s");
+    expect(popover).toHaveTextContent("8m remaining");
+    expect(popover.querySelector(".progress-json-tree .json-node")).not.toBeNull();
+    expect(popover.querySelector("pre")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Copy reported progress data" }),
+    ).toBeVisible();
+  });
+
+  it("keeps minutes in hour- and day-scale ETA values", () => {
+    expect(formatEstimatedDuration((3 * 60 + 20) * 60_000)).toBe("3h 20m");
+    expect(formatEstimatedDuration((24 * 60 + 3 * 60 + 20) * 60_000)).toBe(
+      "1d 3h 20m",
+    );
   });
 });
 

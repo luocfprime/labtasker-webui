@@ -133,6 +133,15 @@ export const messages = {
   progress: {
     completed: "Completed",
     total: "Total",
+    eta: "ETA",
+    calculating: "Calculating…",
+    finishing: "Finishing…",
+    overdue: "Overdue",
+    remaining: (value: string) => `${value} remaining`,
+    reportedEtaHint: "Worker-reported ETA, counted down from the latest progress report",
+    derivedEtaHint: "Linear estimate based on progress at the latest report",
+    reportedData: "Reported data",
+    copyReportedData: "Copy reported progress data",
   },
   json: {
     object: "Object",

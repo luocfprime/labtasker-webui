@@ -110,6 +110,14 @@ remain user-defined. A running Task without a valid `completed / total` ratio
 shows `—`; non-running rows leave the Progress column blank. The Progress column
 starts compact and can be resized like the other data columns.
 
+Hover or focus a determinate ring to see its exact values, execution Duration,
+ETA and reported data as a compact JSON tree. A numeric `eta` in the progress
+object means seconds remaining when that snapshot was reported; an ISO timestamp
+means the estimated finish time. Without a valid reported `eta`, the WebUI shows
+a coarse linear estimate based on the completed ratio and elapsed time at the
+latest progress report. This display-only fallback is not stored, filterable or
+available as a column; reported `progress.eta` remains ordinary Task data.
+
 ## Project profiles
 
 On loopback binds, the WebUI remembers settings in its working directory:

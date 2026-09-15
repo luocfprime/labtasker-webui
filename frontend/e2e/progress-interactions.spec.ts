@@ -33,13 +33,13 @@ test("Progress summary clicks do not open Task details", async ({
   await page
     .getByRole("button", { name: "Show Task progress: 42%", exact: true })
     .click();
-  const popup = page.getByRole("tooltip", {
+  const popup = page.getByRole("dialog", {
     name: "Task progress details",
     exact: true,
   });
   await expect(popup).toBeVisible();
   await page.screenshot({ path: info.outputPath("summary-before-click.png") });
-  await popup.getByText("42.9", { exact: true }).click();
+  await popup.locator(".json-node summary").first().click();
   await page.screenshot({ path: info.outputPath("summary-after-click.png") });
   await expect(page).not.toHaveURL(/task=/);
 });
@@ -73,7 +73,7 @@ test("Escape inside a pinned Progress summary dismisses it", async ({
   await page
     .getByRole("button", { name: "Show Task progress: 42%", exact: true })
     .click();
-  const popup = page.getByRole("tooltip", {
+  const popup = page.getByRole("dialog", {
     name: "Task progress details",
     exact: true,
   });
@@ -106,4 +106,26 @@ test("29 completed out of 100 displays 29 percent", async ({ page }, info) => {
     "aria-valuenow",
     "29",
   );
+});
+
+test("a reported ETA takes precedence over the linear fallback", async ({
+  page,
+}) => {
+  await page.route("**/api/webui/queues/robotwin/tasks?*", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    for (const task of data.items) {
+      if (task.id === "t_RUNNING12345") {
+        task.progress.eta = 600;
+        task.progress_updated_at = new Date(Date.now() - 2 * 60_000).toISOString();
+      }
+    }
+    await route.fulfill({ response, json: data });
+  });
+  await open(page);
+  await page
+    .getByRole("button", { name: "Show Task progress: 42%", exact: true })
+    .hover();
+  const eta = page.locator('[data-tooltip^="Worker-reported ETA"]');
+  await expect(eta).toHaveText("8m remaining");
 });

@@ -253,10 +253,130 @@ export function progressPercentage(
   return Math.min(completed < total ? 99 : 100, Math.floor(percentage + tolerance));
 }
 
+type ProgressEta =
+  | { kind: "remaining"; milliseconds: number; reported: boolean }
+  | { kind: "calculating"; reported: false }
+  | { kind: "finishing"; reported: false }
+  | { kind: "overdue"; reported: boolean };
+
+export function progressEta(
+  task: Pick<
+    Task,
+    | "status"
+    | "attempt"
+    | "started_at"
+    | "progress"
+    | "progress_attempt"
+    | "progress_updated_at"
+  >,
+  now = Date.now(),
+): ProgressEta | null {
+  if (
+    task.status !== "running" ||
+    task.progress === null ||
+    task.started_at === null ||
+    task.progress_updated_at === null ||
+    (task.progress_attempt !== null && task.progress_attempt !== task.attempt)
+  ) {
+    return null;
+  }
+  const started = Date.parse(task.started_at);
+  const updated = Date.parse(task.progress_updated_at);
+  if (
+    !Number.isFinite(started) ||
+    !Number.isFinite(updated) ||
+    !Number.isFinite(now) ||
+    updated < started
+  ) {
+    return null;
+  }
+
+  let estimatedFinish: number | null = null;
+  const reportedEta = task.progress.eta;
+  if (
+    typeof reportedEta === "number" &&
+    Number.isFinite(reportedEta) &&
+    reportedEta >= 0
+  ) {
+    // A numeric progress.eta is seconds remaining at progress_updated_at.
+    estimatedFinish = updated + reportedEta * 1000;
+  } else if (
+    typeof reportedEta === "string" &&
+    /^\d{4}-\d{2}-\d{2}T/.test(reportedEta)
+  ) {
+    const parsed = Date.parse(reportedEta);
+    if (Number.isFinite(parsed)) estimatedFinish = parsed;
+  }
+  if (estimatedFinish !== null && Number.isFinite(estimatedFinish)) {
+    const remaining = estimatedFinish - now;
+    return remaining > 0
+      ? { kind: "remaining", milliseconds: remaining, reported: true }
+      : { kind: "overdue", reported: true };
+  }
+
+  const percent = progressPercentage(task.progress);
+  if (percent === null) return null;
+  const completed = task.progress.completed as number;
+  const total = task.progress.total as number;
+  if (completed === 0) return { kind: "calculating", reported: false };
+  if (completed === total) return { kind: "finishing", reported: false };
+  const snapshotDuration = updated - started;
+  if (snapshotDuration <= 0) return null;
+  const remainingAtUpdate = snapshotDuration * ((total - completed) / completed);
+  if (!Number.isFinite(remainingAtUpdate)) return null;
+  const remaining = updated + remainingAtUpdate - now;
+  return remaining > 0
+    ? { kind: "remaining", milliseconds: remaining, reported: false }
+    : { kind: "overdue", reported: false };
+}
+
+export function formatEstimatedDuration(milliseconds: number): string {
+  if (milliseconds < 60_000) return "<1m";
+  const totalMinutes = Math.ceil(milliseconds / 60_000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const totalHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (totalHours < 24)
+    return `${totalHours}h${minutes ? ` ${minutes}m` : ""}`;
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return `${days}d${hours ? ` ${hours}h` : ""}${minutes ? ` ${minutes}m` : ""}`;
+}
+
+function EtaValue({ value }: { value: ProgressEta | null }) {
+  if (value === null) return <>—</>;
+  if (value.kind === "calculating") return <>{m.progress.calculating}</>;
+  if (value.kind === "finishing") return <>{m.progress.finishing}</>;
+  if (value.kind === "overdue") return <>{m.progress.overdue}</>;
+  const duration = formatEstimatedDuration(value.milliseconds);
+  return (
+    <span
+      className="eta"
+      data-tooltip={
+        value.reported
+          ? m.progress.reportedEtaHint
+          : m.progress.derivedEtaHint
+      }
+      tabIndex={0}
+    >
+      {value.reported ? "" : "~"}
+      {m.progress.remaining(duration)}
+    </span>
+  );
+}
+
 export function TaskProgressCell({
   task,
 }: {
-  task: Pick<Task, "status" | "progress" | "progress_attempt" | "progress_updated_at">;
+  task: Pick<
+    Task,
+    | "status"
+    | "attempt"
+    | "started_at"
+    | "progress"
+    | "progress_attempt"
+    | "progress_updated_at"
+  >;
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -266,6 +386,8 @@ export function TaskProgressCell({
   const panelId = useId();
   const percent = progressPercentage(task.progress);
   const open = percent !== null && (hovered || focused || pinned);
+  const now = useExecutionClock(task.status === "running" && open);
+  const eta = progressEta(task, now);
   useAnchoredPanel(open, trigger, panel, 320);
 
   useEffect(() => {
@@ -309,7 +431,8 @@ export function TaskProgressCell({
         className="progress-trigger"
         aria-label={`Show Task progress: ${percent}%`}
         aria-expanded={open}
-        aria-describedby={open ? panelId : undefined}
+        aria-controls={pinned ? panelId : undefined}
+        aria-describedby={open && !pinned ? panelId : undefined}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onFocus={() => setFocused(true)}
@@ -345,7 +468,7 @@ export function TaskProgressCell({
           ref={panel}
           id={panelId}
           className="progress-popover"
-          role="tooltip"
+          role={pinned ? "dialog" : "tooltip"}
           aria-label="Task progress details"
         >
           <strong>{percent}%</strong>
@@ -354,12 +477,38 @@ export function TaskProgressCell({
             <dd>{completed}</dd>
             <dt>{m.progress.total}</dt>
             <dd>{total}</dd>
+            <dt>{m.task.duration}</dt>
+            <dd>
+              <ExecutionDuration
+                task={{
+                  status: task.status,
+                  started_at: task.started_at,
+                  finished_at: null,
+                }}
+                now={now}
+              />
+            </dd>
+            <dt>{m.progress.eta}</dt>
+            <dd><EtaValue value={eta} /></dd>
             <dt>{m.task.attempt}</dt>
             <dd>{task.progress_attempt ?? "—"}</dd>
             <dt>{m.task.updated}</dt>
             <dd><TimeValue value={task.progress_updated_at} /></dd>
           </dl>
-          <pre>{JSON.stringify(task.progress, null, 2)}</pre>
+          <div className="progress-data-title">
+            <span>{m.progress.reportedData}</span>
+            <button
+              type="button"
+              className="link"
+              aria-label={m.progress.copyReportedData}
+              onClick={() => void copyJson(task.progress)}
+            >
+              {m.common.copy}
+            </button>
+          </div>
+          <div className="json-tree progress-json-tree">
+            <JsonNode value={task.progress} copyable={false} />
+          </div>
         </div>
       )}
     </span>
@@ -1895,10 +2044,12 @@ export function JsonNode({
   label,
   value,
   depth = 0,
+  copyable = true,
 }: {
   label?: string;
   value: unknown;
   depth?: number;
+  copyable?: boolean;
 }) {
   const prefix =
     label === undefined ? null : <span className="json-key">{label}</span>;
@@ -1913,17 +2064,25 @@ export function JsonNode({
             {kind} · {entries.length}
           </span>
         </summary>
-        <button
-          className="json-copy"
-          aria-label={m.json.copyValue(label)}
-          onClick={() => void copyJson(value)}
-        >
-          {m.common.copy}
-        </button>
+        {copyable && (
+          <button
+            className="json-copy"
+            aria-label={m.json.copyValue(label)}
+            onClick={() => void copyJson(value)}
+          >
+            {m.common.copy}
+          </button>
+        )}
         <div className="json-children">
           {entries.length ? (
             entries.map(([key, child]) => (
-              <JsonNode key={key} label={key} value={child} depth={depth + 1} />
+              <JsonNode
+                key={key}
+                label={key}
+                value={child}
+                depth={depth + 1}
+                copyable={copyable}
+              />
             ))
           ) : (
             <span className="json-empty">{m.common.empty}</span>
@@ -1949,12 +2108,14 @@ export function JsonNode({
   return (
     <div className="json-leaf">
       {prefix} {rendered}
-      <button
-        aria-label={m.json.copyValue(label)}
-        onClick={() => void copyJson(value)}
-      >
-        {m.common.copy}
-      </button>
+      {copyable && (
+        <button
+          aria-label={m.json.copyValue(label)}
+          onClick={() => void copyJson(value)}
+        >
+          {m.common.copy}
+        </button>
+      )}
     </div>
   );
 }

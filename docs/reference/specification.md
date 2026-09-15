@@ -118,12 +118,35 @@ loop. The Status column has a 104 px minimum so every status badge remains fully
 visible, including when an older saved layout requested a narrower width.
 
 Hovering or focusing the ring opens a viewport-contained summary with the exact
-completed and total values, progress attempt, Server report time and a generic
-JSON preview. Clicking pins the same summary until an outside interaction or
-Escape. Clicking inside the summary does not open the Task drawer. Escape works
-from the summary's contents and returns focus to the ring. Task row keyboard
-navigation only handles keys on the row itself; Space on its checkbox toggles
-selection without opening details. The UI assigns no meaning to other progress keys. Task details show a
+completed and total values, current execution Duration, ETA, progress attempt,
+Server report time and a compact JSON tree of the reported object. The tree
+reuses the Task drawer's nested rendering, expands its first two levels, omits
+raw and per-node copy controls, provides one visible whole-object Copy action,
+keeps the root disclosure inset from both edges, and scrolls within a bounded height. Clicking pins
+the summary as a non-modal dialog so its tree can be operated until an outside
+interaction or Escape. Clicking inside the summary does not open the Task
+drawer. Escape works from the summary's contents and returns focus to the ring.
+
+ETA is summary-only derived UI state: it adds no column, Task field, JSON value,
+filter, sort key, custom path, profile setting or saved-view state. A finite
+nonnegative numeric `progress.eta` is interpreted as seconds remaining at
+`progress_updated_at`; an ISO timestamp string is interpreted as the estimated
+finish time. Either valid reported form takes precedence and remains ordinary
+Worker-reported JSON, so `progress.eta` stays visible in the tree and available
+to upstream `progress.*` filtering. An invalid or absent reported ETA falls back
+to linear extrapolation only when the current attempt has valid timestamps and
+`0 < completed < total`: the average rate uses
+`progress_updated_at - started_at`, never the current browser time. The resulting
+finish time is anchored at `progress_updated_at`; the browser clock only counts
+down from that fixed estimate while the summary is open. Derived values are
+coarsened to minute-scale display and marked approximate. Zero completion shows
+Calculating, completed equal to total shows Finishing, a passed estimate shows
+Overdue, and invalid inputs show an em dash.
+
+Task row keyboard navigation only handles keys on the row itself; Space on its
+checkbox toggles selection without opening details. Apart from the display
+conventions for `completed`, `total` and `eta`, the UI assigns no meaning to other
+progress keys. Task details show a
 Progress JSON section immediately before Result whenever progress is non-null,
 including for terminal Tasks whose last snapshot was retained. Its heading
 shows the Server-owned attempt and report time. Null progress adds no details

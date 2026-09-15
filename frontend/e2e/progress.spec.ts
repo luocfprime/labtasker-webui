@@ -50,11 +50,22 @@ test("Task progress is compact in the list and complete in Task details", async 
   const popover = page.getByRole("tooltip", { name: "Task progress details" });
   await expect(popover).toContainText("42%");
   await expect(popover).toContainText("42.9");
+  await expect(popover).toContainText("Duration");
+  await expect(popover).toContainText("ETA");
+  await expect(popover).toContainText(/~\d+m remaining/);
   await expect(popover).toContainText("validation_loss");
+  const progressTree = popover.locator(".progress-json-tree");
+  await expect(progressTree.locator(".json-node").first()).toBeVisible();
+  await expect(progressTree).toHaveCSS("padding-left", "20px");
+  await expect(progressTree).toHaveCSS("padding-right", "16px");
+  await expect(popover.locator("pre")).toHaveCount(0);
+  await expect(
+    popover.getByRole("button", { name: "Copy reported progress data" }),
+  ).toBeVisible();
 
   await ring.click();
   await page.mouse.move(0, 0);
-  await expect(popover).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Task progress details" })).toBeVisible();
   await expect(page).not.toHaveURL(/task=/);
   await page.locator(".crumb").click();
   await expect(popover).toHaveCount(0);
