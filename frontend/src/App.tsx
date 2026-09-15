@@ -46,7 +46,7 @@ function LiveExecutionDuration({ task }: { task: Task }) {
 }
 
 type Status = "pending" | "running" | "succeeded" | "failed" | "cancelled";
-type SelectionAction = "cancel" | "requeue" | "delete";
+type SelectionAction = "cancel" | "requeue" | "delete" | "priority";
 type Task = {
   id: string;
   queue: string;
@@ -141,6 +141,7 @@ const selectionActionStatuses: Record<SelectionAction, readonly Status[]> = {
   cancel: ["pending", "running"],
   requeue: ["pending", "failed", "cancelled"],
   delete: ["pending", "succeeded", "failed", "cancelled"],
+  priority: ["pending", "succeeded", "failed", "cancelled"],
 };
 function selectionActionReason(
   action: SelectionAction,
@@ -1090,15 +1091,18 @@ function Workspace({
     key: string;
     message: string;
   } | null>(null);
+  const [priorityInput, setPriorityInput] = useState("");
   const selectionSubmitting = useRef(false);
   const selectionMutation = useMutation({
     mutationKey: ["selection-action", queue],
     mutationFn: async ({
       action,
       targets,
+      priority,
     }: {
       action: Exclude<SelectionAction, "delete">;
       targets: Task[];
+      priority?: number;
     }) => {
       const failed: { id: string; message: string }[] = [];
       let cursor = 0;
@@ -1107,9 +1111,12 @@ function Workspace({
           while (cursor < targets.length) {
             const target = targets[cursor++];
             try {
+              const taskPath = `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(target.id)}`;
               await api(
-                `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(target.id)}/${action}`,
-                { method: "POST" },
+                action === "priority" ? `${taskPath}/priority` : `${taskPath}/${action}`,
+                action === "priority"
+                  ? { method: "PATCH", body: JSON.stringify({ priority }) }
+                  : { method: "POST" },
               );
             } catch (reason) {
               failed.push({
@@ -1120,9 +1127,9 @@ function Workspace({
           }
         }),
       );
-      return { action, targets, failed };
+      return { action, targets, failed, priority };
     },
-    onSuccess: ({ action, targets, failed }) => {
+    onSuccess: ({ action, targets, failed, priority }) => {
       const failedIds = new Set(failed.map(item => item.id));
       const completed = targets.length - failed.length;
       setSelected(current => {
@@ -1135,11 +1142,15 @@ function Workspace({
       if (failed.length) {
         setSelectionError({
           key: [...failedIds].sort().join("\n"),
-          message: `${m.workspace.batchActionPartial(completed, action === "cancel" ? "cancelled" : "requeued", failed.length)} ${failed.map(item => `${item.id}: ${item.message}`).join(" ")}`,
+          message: `${action === "priority"
+            ? m.workspace.priorityPartial(completed, failed.length, priority!)
+            : m.workspace.batchActionPartial(completed, action === "cancel" ? "cancelled" : "requeued", failed.length)} ${failed.map(item => `${item.id}: ${item.message}`).join(" ")}`,
         });
       } else {
         setSelectionError(null);
-        notify(m.workspace.batchActionComplete(completed, action === "cancel" ? "cancelled" : "requeued"));
+        notify(action === "priority"
+          ? m.workspace.priorityComplete(completed, priority!)
+          : m.workspace.batchActionComplete(completed, action === "cancel" ? "cancelled" : "requeued"));
       }
       void tasks.refetch();
       void qc.invalidateQueries({ queryKey: ["queues"] });
@@ -1155,15 +1166,22 @@ function Workspace({
     selectionMutation.isPending
       ? m.workspace.actionPending
       : selectionActionReason(action, selectedTasks, selected.size);
-  const runSelectionAction = (action: Exclude<SelectionAction, "delete">) => {
+  const runSelectionAction = (action: Exclude<SelectionAction, "delete">, priority?: number) => {
     if (selectionSubmitting.current || selectionActionReason(action, selectedTasks, selected.size)) return;
     selectionSubmitting.current = true;
     setSelectionError(null);
-    selectionMutation.mutate({ action, targets: selectedTasks });
+    selectionMutation.mutate({ action, targets: selectedTasks, priority });
   };
   const cancelReason = actionReason("cancel");
   const requeueReason = actionReason("requeue");
   const deleteReason = actionReason("delete");
+  const parsedPriority = Number(priorityInput);
+  const priorityValue = priorityInput.trim() && Number.isSafeInteger(parsedPriority)
+    ? parsedPriority
+    : undefined;
+  const priorityReason = priorityValue === undefined ? undefined : actionReason("priority");
+  const priorityDisabled = priorityValue === undefined || !!priorityReason;
+  const priorityInvalid = priorityInput !== "" && priorityValue === undefined;
   const toggle = (id: string) =>
     setSelected((old) => {
       const n = new Set(old);
@@ -1447,7 +1465,13 @@ function Workspace({
             {filters.route && <span className="active-route" data-tooltip={filters.route}>{filters.route}</span>}
           </div>
           {tab === "workers" && <WorkersPanel queue={queue} server={server} route={filters.route || ""} counts={routeCounts}
-            status={workerStatus} setStatus={value => navigatePanel("workers", value)} openTask={openTask} />}
+            status={workerStatus} setStatus={value => navigatePanel("workers", value)} openTask={openTask}
+            columnSizing={preferences.workerWidths}
+            setColumnSizing={updater => setPreferences(current => ({
+              ...current,
+              workerWidths: typeof updater === "function" ? updater(current.workerWidths) : updater,
+            }))}
+            notify={notify} />}
           <div className="task-workspace" hidden={tab !== "tasks"}>
       <div className="stats" aria-label="Task status counts">
         <button className={`all${!filters.status ? " active" : ""}`} aria-pressed={!filters.status}
@@ -1570,6 +1594,9 @@ function Workspace({
             {selectionError?.key === selectionKey && (
               <small role="alert">{selectionError.message}</small>
             )}
+            {priorityInvalid && (
+              <small id="selected-priority-error" role="alert">{m.workspace.invalidPriority}</small>
+            )}
           </div>
           <div className="selection-actions">
             <span className="selection-action-hint" data-tooltip={cancelReason}
@@ -1595,8 +1622,26 @@ function Workspace({
                 {m.workspace.deleteSelected}
               </button>
             </span>
+            <form className="priority-editor" data-tooltip={priorityReason}
+              onSubmit={event => {
+                event.preventDefault();
+                if (priorityValue !== undefined && !priorityReason)
+                  runSelectionAction("priority", priorityValue);
+              }}>
+              <input type="number" step="1" min={Number.MIN_SAFE_INTEGER}
+                max={Number.MAX_SAFE_INTEGER} value={priorityInput}
+                disabled={selectionMutation.isPending}
+                aria-label={m.workspace.priorityInput} placeholder="Priority"
+                aria-invalid={priorityInvalid}
+                aria-describedby={priorityInvalid ? "selected-priority-error" : undefined}
+                onChange={event => setPriorityInput(event.target.value)} />
+              <button className="link" type="submit" disabled={priorityDisabled}>
+                {selectionMutation.isPending && selectionMutation.variables?.action === "priority"
+                  ? m.workspace.settingPriority : m.workspace.setPriority}
+              </button>
+            </form>
             <button className="link" onClick={() => setSelected(new Set())}>
-              {m.common.clear}
+              {m.workspace.clearSelection}
             </button>
           </div>
         </div>

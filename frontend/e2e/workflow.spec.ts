@@ -43,7 +43,7 @@ test("connect, inspect, requeue, and delete selected filtered tasks", async ({
   await page.getByRole("option", { name: "pending", exact: true }).click();
   await expect(page).toHaveURL(/status=pending/);
   await page.getByRole("checkbox", { name: "Select loaded tasks" }).check();
-  await page.getByRole("button", { name: "Delete selected" }).click();
+  await page.getByRole("button", { name: "Delete Tasks" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Delete 2 Tasks?" });
   await expect(dialog).toContainText("2 immutable Task IDs");

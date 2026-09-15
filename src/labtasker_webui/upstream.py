@@ -33,6 +33,7 @@ class Upstream:
         path: str,
         *,
         params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
     ) -> Any:
         is_local = connection.socket_path is not None
         base = (
@@ -56,7 +57,10 @@ class Upstream:
                     else None,
                     trust_env=not is_local,
                 ) as client:
-                    response = await client.request(method, url, params=params, headers=headers)
+                    request_options: dict[str, Any] = {"params": params, "headers": headers}
+                    if json is not None:
+                        request_options["json"] = json
+                    response = await client.request(method, url, **request_options)
             except (httpx.RequestError, DestinationBlocked) as exc:
                 if is_local:
                     raise UpstreamError(
@@ -126,7 +130,7 @@ class Upstream:
             "/api/v2/queues": {"get"},
             "/api/v2/queues/{queue}/tasks": {"get"},
             "/api/v2/queues/{queue}/tasks/count": {"get"},
-            "/api/v2/queues/{queue}/tasks/{task_id}": {"get", "delete"},
+            "/api/v2/queues/{queue}/tasks/{task_id}": {"get", "patch", "delete"},
             "/api/v2/queues/{queue}/tasks/{task_id}/cancel": {"post"},
             "/api/v2/queues/{queue}/tasks/{task_id}/requeue": {"post"},
         }

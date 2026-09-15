@@ -37,6 +37,10 @@ class BatchRequest(BaseModel):
     task_ids: list[str] = Field(min_length=1, max_length=1000)
 
 
+class PriorityUpdateRequest(BaseModel):
+    priority: int = Field(strict=True, ge=-(2**63), le=2**63 - 1)
+
+
 class QueueResponse(BaseModel):
     name: str
 

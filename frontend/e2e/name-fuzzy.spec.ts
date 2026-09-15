@@ -27,7 +27,7 @@ test('name fuzzy applies on commit and shares selection with counts and deletion
   expect(snapshot.ok()).toBeTruthy();
   expect((await snapshot.json()).task_ids).toEqual(['t_ABCDEFGHIJKL']);
   await page.getByRole('checkbox', {name: 'Select loaded tasks', exact: true}).check();
-  await page.getByRole('button', {name: 'Delete selected', exact: true}).click();
+  await page.getByRole('button', {name: 'Delete Tasks', exact: true}).click();
   await expect(page.getByRole('dialog')).toContainText('1');
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await page.reload();

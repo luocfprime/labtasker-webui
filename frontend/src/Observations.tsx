@@ -1,5 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+  type ColumnSizingState,
+  type OnChangeFn,
+} from "@tanstack/react-table";
 import { api, ApiRequestError } from "./api";
 import { Select } from "./Select";
 import { combineRoutes, readGroups, workerFilter, workerFreshness, type Worker } from "./workerData";
@@ -51,9 +59,11 @@ export function RouteSidebar({counts, route, choose, inactive, setInactive}: {
     <label className="inactive-routes"><span>Inactive routes</span><input type="checkbox" aria-label="Include inactive routes" checked={inactive} onChange={event => setInactive(event.target.checked)} /><span className="inactive-switch" aria-hidden="true" /></label>
   </aside>;
 }
-export function WorkersPanel({queue, server, route, counts, status, setStatus, openTask}: {
+export function WorkersPanel({queue, server, route, counts, status, setStatus, openTask, columnSizing, setColumnSizing, notify}: {
   queue: string; server: string; route: string; counts: Counts;
   status: string; setStatus: (status: string) => void; openTask: (id: string) => void;
+  columnSizing: ColumnSizingState; setColumnSizing: OnChangeFn<ColumnSizingState>;
+  notify: (message: string) => void;
 }) {
   const filter = workerFilter(route, status);
   const list = useInfiniteQuery({
@@ -87,6 +97,71 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
   const idle = groups?.filter(g => g.key.status === "idle").reduce((n,g) => n+g.count,0);
   const busy = groups?.filter(g => g.key.status === "busy").reduce((n,g) => n+g.count,0);
   const unavailable = !groups || !!counts.workers.error;
+  const columns = useMemo<ColumnDef<Worker>[]>(() => [
+    {
+      id: "worker", header: "Worker", size: 240,
+      cell: ({row}) => <code data-tooltip={row.original.id}>{row.original.id}</code>,
+    },
+    {
+      id: "status", header: "Status", size: 100,
+      cell: ({row}) => <span className={`badge worker-${row.original.status}`}>{row.original.status === "idle" ? "Idle" : "Busy"}</span>,
+    },
+    {
+      id: "route", header: "Route", size: 200,
+      cell: ({row}) => <span className="worker-route" data-tooltip={row.original.route}><RouteDot counts={counts} route={row.original.route} />{row.original.route}</span>,
+    },
+    {
+      id: "task", header: "Task", size: 240,
+      cell: ({row}) => row.original.task_id ? <button className="link" data-task-link={row.original.task_id} data-tooltip={row.original.task_id} onClick={() => openTask(row.original.task_id!)}>{row.original.task_id}</button> : "—",
+    },
+    {
+      id: "lastSeen", header: "Last seen", size: 210,
+      cell: ({row}) => {
+        const freshness = workerFreshness(row.original, now);
+        return <><time dateTime={row.original.last_seen_at} data-tooltip={new Date(row.original.last_seen_at).toLocaleString()}>{duration(freshness.age)} ago</time>
+          {!list.error && freshness.delayed && <small className="observation-delayed">{freshness.expired ? "Observation expired" : `Update delayed · Expires in ${duration(freshness.remaining)}`}</small>}</>;
+      },
+    },
+  ], [counts, list.error, now, openTask]);
+  const table = useReactTable({
+    data: rows,
+    columns,
+    columnResizeMode: "onChange",
+    onColumnSizingChange: setColumnSizing,
+    defaultColumn: {minSize: 60, maxSize: 10000, size: 160},
+    getRowId: worker => worker.id,
+    state: {columnSizing},
+    getCoreRowModel: getCoreRowModel(),
+  });
+  const fitColumn = (id: string) => {
+    const column = table.getColumn(id);
+    const header = scroll.current?.querySelector<HTMLElement>(`th[data-column-id="${id}"]`);
+    if (!column?.getCanResize() || !header) return;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const sample = scroll.current?.querySelector<HTMLElement>(`td[data-column-id="${id}"]`);
+    const measure = (text: string, element: Element = sample || header) => {
+      const style = getComputedStyle(element);
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      return context.measureText(text).width;
+    };
+    let width = measure(String(column.columnDef.header), header) + 36;
+    for (const worker of rows) {
+      const freshness = workerFreshness(worker, now);
+      const value = id === "worker" ? worker.id
+        : id === "status" ? (worker.status === "idle" ? "Idle" : "Busy")
+          : id === "route" ? worker.route
+            : id === "task" ? worker.task_id || "—"
+              : freshness.delayed
+                ? `${duration(freshness.age)} ago ${freshness.expired ? "Observation expired" : `Update delayed · Expires in ${duration(freshness.remaining)}`}`
+                : `${duration(freshness.age)} ago`;
+      width = Math.max(width, measure(value) + (id === "status" ? 38 : id === "route" ? 42 : 24));
+    }
+    const fitted = Math.min(10000, Math.max(60, Math.ceil(width)));
+    setColumnSizing(current => ({...current, [id]: fitted}));
+    notify(`${String(column.columnDef.header)} fitted to content · ${fitted}px`);
+  };
   return <section className="workers-panel" aria-label="Workers">
     <div className="worker-stats">
       <button aria-pressed={!status} onClick={() => setStatus("")}><strong>{unavailable ? "—" : idle!+busy!}</strong> All</button>
@@ -96,16 +171,41 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
     <div className="worker-toolbar"><Select label="Worker status" value={status} onChange={setStatus} options={[{value: "", label: "All statuses"}, {value: "idle", label: "Idle"}, {value: "busy", label: "Busy"}]} /><span>Latest Worker observations</span></div>
     {list.error && <p className="muted">Worker observations unavailable. Use Refresh to retry.</p>}
     <div className="worker-table table-wrap" ref={scroll}>
-      <table><thead><tr><th>Worker</th><th>Status</th><th>Route</th><th>Task</th><th>Last seen</th></tr></thead><tbody>
-        {rows.map(w => {const freshness = workerFreshness(w, now);return <tr key={w.id}>
-          <td><code data-tooltip={w.id}>{w.id}</code></td><td><span className={`badge worker-${w.status}`}>{w.status === "idle" ? "Idle" : "Busy"}</span></td>
-          <td><span className="worker-route" data-tooltip={w.route}><RouteDot counts={counts} route={w.route} />{w.route}</span></td>
-          <td>{w.task_id ? <button className="link" data-task-link={w.task_id} data-tooltip={w.task_id} onClick={() => openTask(w.task_id!)}>{w.task_id}</button> : "—"}</td>
-          <td><time dateTime={w.last_seen_at} data-tooltip={new Date(w.last_seen_at).toLocaleString()}>{duration(freshness.age)} ago</time>
-            {!list.error && freshness.delayed && <small className="observation-delayed">{freshness.expired ? "Observation expired" : `Update delayed · Expires in ${duration(freshness.remaining)}`}</small>}
-          </td>
-        </tr>;})}
-      </tbody></table>
+      <table style={{width: table.getTotalSize(), minWidth: "100%"}}>
+        <colgroup>
+          {table.getVisibleLeafColumns().map(column => <col key={column.id} style={{width: column.getSize()}} />)}
+          <col className="table-filler" />
+        </colgroup>
+        <thead>{table.getHeaderGroups().map(group => <tr key={group.id}>
+          {group.headers.map(header => <th key={header.id} data-column-id={header.column.id}
+            aria-label={String(header.column.columnDef.header)}
+            data-tooltip={`${String(header.column.columnDef.header)} · Double-click to fit content`}
+            onDoubleClick={() => fitColumn(header.column.id)}>
+            {flexRender(header.column.columnDef.header, header.getContext())}
+            {header.column.getCanResize() && <span className="column-resizer" role="separator" aria-orientation="vertical"
+              aria-label={`Resize ${String(header.column.columnDef.header)}`}
+              aria-valuenow={header.column.getSize()} aria-valuemin={header.column.columnDef.minSize ?? 60}
+              aria-valuemax={header.column.columnDef.maxSize ?? 10000} tabIndex={0}
+              onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()}
+              onDoubleClick={event => {event.stopPropagation();fitColumn(header.column.id);}}
+              onKeyDown={event => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                const min = header.column.columnDef.minSize ?? 60;
+                const max = header.column.columnDef.maxSize ?? 10000;
+                const size = Math.min(max, Math.max(min, header.column.getSize() + (event.key === "ArrowRight" ? 16 : -16)));
+                setColumnSizing(current => ({...current, [header.column.id]: size}));
+              }} />}
+          </th>)}
+          <th className="table-filler" aria-hidden="true" />
+        </tr>)}</thead>
+        <tbody>{table.getRowModel().rows.map(row => <tr key={row.id}>
+          {row.getVisibleCells().map(cell => <td key={cell.id} data-column-id={cell.column.id}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </td>)}
+          <td className="table-filler" aria-hidden="true" />
+        </tr>)}</tbody>
+      </table>
       {list.isLoading && <div className="loading">Loading Workers…</div>}
       {!list.isLoading && !list.error && !rows.length && <div className="empty"><h2>No active Worker observations</h2><p>{status ? "No Workers match this state." : "Task execution and Worker observations are independent."}</p></div>}
       <div ref={sentinel} className="load-more">{list.isFetchingNextPage ? "Loading Workers…" : list.isFetchNextPageError && <button onClick={() => void list.fetchNextPage()}>Retry loading</button>}</div>

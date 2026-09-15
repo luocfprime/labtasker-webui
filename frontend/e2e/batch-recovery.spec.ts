@@ -7,7 +7,7 @@ async function open(page:Page){
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByRole('heading',{name:'robotwin',exact:true}).click();
   await page.locator('tbody input[type=checkbox]').first().check();
-  await page.getByRole('button',{name:'Delete selected',exact:true}).click();
+  await page.getByRole('button',{name:'Delete Tasks',exact:true}).click();
 }
 test('batch submission prevents duplicate requests while awaiting the operation',async({page})=>{
   await open(page);

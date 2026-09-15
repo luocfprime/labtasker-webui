@@ -73,11 +73,16 @@ export const messages = {
     resolving: "Resolving…",
     noFilterMatches: "No Tasks match the current filter.",
     selected: (count: number) => `${plural(count, "Task")} selected`,
-    cancelSelected: "Cancel selected",
+    cancelSelected: "Cancel Tasks",
     cancellingSelected: "Cancelling selected…",
-    requeueSelected: "Requeue selected",
+    requeueSelected: "Requeue Tasks",
     requeuingSelected: "Requeuing selected…",
-    deleteSelected: "Delete selected",
+    deleteSelected: "Delete Tasks",
+    clearSelection: "Clear selection",
+    priorityInput: "Priority for selected Tasks",
+    invalidPriority: "Priority must be a whole number in the supported range.",
+    setPriority: "Set priority",
+    settingPriority: "Setting priority…",
     actionPending: "Wait for the current selected-Task action to finish.",
     unavailableSelectedTasks:
       "Some selected Task statuses are no longer available. Refresh or clear the selection and select them again.",
@@ -86,6 +91,7 @@ export const messages = {
       requeue:
         "Requeue requires every selected Task to be pending, failed, or cancelled.",
       delete: "Delete requires every selected Task not to be running.",
+      priority: "Priority can be set only when every selected Task is not running.",
     },
     ineligibleSelection: (statuses: string) =>
       `Ineligible selection: ${statuses}.`,
@@ -96,6 +102,10 @@ export const messages = {
       result: "cancelled" | "requeued",
       failed: number,
     ) => `${plural(completed, "Task")} ${result}; ${plural(failed, "Task")} failed and ${failed === 1 ? "remains" : "remain"} selected.`,
+    priorityComplete: (count: number, priority: number) =>
+      `Priority ${priority} set for ${plural(count, "Task")}.`,
+    priorityPartial: (completed: number, failed: number, priority: number) =>
+      `Priority ${priority} set for ${plural(completed, "Task")}; ${plural(failed, "Task")} failed and ${failed === 1 ? "remains" : "remain"} selected.`,
     loadingTasks: "Loading Tasks…",
     emptyTitle: "No matching Tasks",
     emptyBody: "Try changing the active selectors or filter expression.",

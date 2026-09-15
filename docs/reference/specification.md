@@ -7,8 +7,9 @@ Browser (React, Query, Table)
 ```
 
 The BFF owns upstream credentials, session cookies, origin validation and destructive
-operation snapshots. The UI observes Tasks and supports cancel, requeue and selected-ID
-deletion; it does not submit/edit Tasks. Local attachment discovers and uses the existing
+operation snapshots. The UI observes Tasks and supports cancel, requeue, selected-ID
+deletion and selected-ID priority updates; it does not submit Tasks or edit other Task
+fields. Local attachment discovers and uses the existing
 socket without managing the Labtasker process or opening its database.
 
 ## Server version warnings
@@ -44,7 +45,7 @@ Neither credentials nor version observations are written to the profile.
 | Connection URL/local project | Backend profile in WebUI working directory |
 | Bearer token | Backend only; separate owner-only `webui-token` file |
 | Queue, applied selectors, drawer Task ID | URL/history plus React state |
-| Current working column layout | Connection + queue scope; browser and profile |
+| Current Task column layout and Worker column widths | Connection + queue scope; browser and profile |
 | Named data view | Explicit snapshot scoped to connection + queue |
 | Task selection | Current workspace memory; exact Task IDs |
 | Pending profile write | Browser recovery record until the backend acknowledges saving |
@@ -84,12 +85,15 @@ Applying or resetting a saved view also preserves selection when only sorting or
 column layout changes.
 Changing the filter range clears selection, including through browser history.
 The selection column remains pinned while the Task table scrolls horizontally.
-An explicit Task selection exposes Cancel, Requeue and Delete actions. Each action is
-enabled only when every selected Task has a compatible status, using the same rules as
-the Task drawer: Cancel accepts pending/running, Requeue accepts
-pending/failed/cancelled, and Delete rejects running. Disabled actions explain the
-required and incompatible statuses on hover or keyboard focus. Batch Cancel and Requeue
-retain failed Task IDs for retry while clearing successful IDs from the selection.
+An explicit Task selection exposes Cancel Tasks, Requeue Tasks, Delete Tasks and Set
+priority actions. Clear selection only removes the current checkmarks. Each lifecycle
+action is enabled only when every selected Task has a compatible status, using the same
+rules as the Task drawer: Cancel accepts pending/running, Requeue accepts
+pending/failed/cancelled, while Delete and priority updates reject running. Priority
+accepts any JavaScript-safe integer, including zero and negative values. Disabled actions
+explain the required and incompatible statuses on hover or keyboard focus. Batch Cancel,
+Requeue and priority updates retain failed Task IDs for retry while clearing successful
+IDs from the selection.
 Resizing uses per-column widths and a filler for remaining space. JSON paths are read-only
 lookups; missing fields are blank.
 
@@ -237,6 +241,10 @@ Worker IDs, routes and times retain full-value hover tooltips; associated Tasks 
 the existing detail drawer.
 Switching between associated Task links keeps the drawer open. Explicitly closing it
 restores focus to the most recently opened Worker Task link.
+Worker, Status, Route, Task and Last seen columns have independent resize handles. Their
+default widths are 240, 100, 200, 240 and 210 px respectively. Pointer dragging and
+Left/Right keyboard adjustment change only the chosen column; double-click fits that
+column to loaded content. Widths persist per connection and Queue.
 
 Change opens connection settings without discarding the current workspace. Back to
 workspace restores it; a successful connection change clears the query cache.

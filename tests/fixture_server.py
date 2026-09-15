@@ -197,6 +197,23 @@ def get_task(task_id: str) -> dict[str, object]:
     return tasks[task_id]
 
 
+@app.patch("/api/v2/queues/{queue}/tasks/{task_id}")
+def update_task(task_id: str, changes: dict[str, object]) -> Any:
+    task = tasks[task_id]
+    if task["status"] == "running":
+        return Response(
+            status_code=409,
+            media_type="application/json",
+            content=(
+                '{"error":{"code":"task_running","message":'
+                '"Running Tasks cannot be updated.","details":{}}}'
+            ),
+        )
+    task.update(changes)
+    task["updated_at"] = datetime.now(UTC).isoformat()
+    return task
+
+
 @app.post("/api/v2/queues/{queue}/tasks/{task_id}/cancel")
 def cancel(task_id: str) -> dict[str, object]:
     tasks[task_id]["status"] = "cancelled"

@@ -217,3 +217,57 @@ def test_non_loopback_interactive_connection_obeys_allowlist(monkeypatch) -> Non
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "destination_blocked"
+
+
+def test_priority_update_forwards_only_the_validated_priority(monkeypatch) -> None:
+    seen = None
+
+    async def update(self, connection, method, path, *, params=None, json=None):
+        nonlocal seen
+        seen = (method, path, json)
+        return {
+            "id": "t_ABCDEFGHIJKL",
+            "queue": "default",
+            "status": "pending",
+            "name": "test",
+            "args": {},
+            "metadata": {},
+            "priority": json["priority"],
+            "attempt": 0,
+            "max_attempts": 1,
+            "routes": ["default"],
+            "result": {},
+            "progress": None,
+            "progress_updated_at": None,
+            "progress_attempt": None,
+            "last_error": None,
+            "last_route": None,
+            "created_at": "2026-09-15T00:00:00Z",
+            "updated_at": "2026-09-15T00:00:00Z",
+            "started_at": None,
+            "finished_at": None,
+        }
+
+    monkeypatch.setattr(Upstream, "request", update)
+    client = TestClient(create_app(Settings(server_url="http://127.0.0.1:8000")))
+    response = client.patch(
+        "/api/webui/queues/default/tasks/t_ABCDEFGHIJKL/priority",
+        json={"priority": -7},
+    )
+    assert response.status_code == 200
+    assert response.json()["priority"] == -7
+    assert seen == (
+        "PATCH",
+        "/api/v2/queues/default/tasks/t_ABCDEFGHIJKL",
+        {"priority": -7},
+    )
+
+
+def test_priority_update_rejects_non_integer_values() -> None:
+    client = TestClient(create_app(Settings(server_url="http://127.0.0.1:8000")))
+    response = client.patch(
+        "/api/webui/queues/default/tasks/t_ABCDEFGHIJKL/priority",
+        json={"priority": 1.5},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"

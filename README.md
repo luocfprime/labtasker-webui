@@ -16,16 +16,17 @@ The key features are:
   Task list and its total.
 - **Routes and Workers:** Collapse route navigation when you need more table space.
   Inspect Idle/Busy Worker counts and last-seen reports; include inactive routes when
-  reviewing historical work. These features require Server 2.2 or later; Worker
-  reports require Workers that support observations.
+  reviewing historical work. Resize Worker columns or double-click them to fit loaded
+  content. These features require Server 2.2 or later; Worker reports require Workers
+  that support observations.
 - **Flexible result exploration:** Filter Task fields and nested values, or add
   custom columns such as `args.test_num` and `result.succ_rate`. Resize, reorder,
   and double-click columns to fit their contents.
 - **Reusable data views:** Save filters, sorting, and column layouts for each
   connection and Queue. Switch views without rebuilding the table each time.
 - **Complete Task inspection:** Open a Task to inspect its arguments, metadata,
-  execution timeline, errors, and results. Cancel, requeue, or delete selected
-  Tasks through explicit controls.
+  execution timeline, errors, and results. Cancel, requeue, delete, or set the priority
+  of selected Tasks through explicit controls.
 - **Easy local use:** Launch from Python without Node.js. Remember connections
   and UI preferences in the WebUI working directory's `.labtasker/` folder.
 
@@ -156,13 +157,13 @@ responses.
 ## Scope
 
 Labtasker WebUI inspects existing workloads and supports cancellation, requeue,
-and permanent deletion of explicitly selected Task IDs. Batch deletion reports
-each result; it is not an atomic operation.
+priority updates, and permanent deletion of explicitly selected Task IDs. Batch
+operations report partial failures; deletion is not an atomic operation.
 
-Use the Labtasker Client, CLI, or Workers to submit and execute Tasks. The WebUI
-does not submit or edit Tasks, schedule work, allocate resources, or manage the
-Labtasker process. Local mode only attaches to an existing instance and never
-opens its database.
+Use the Labtasker Client, CLI, or Workers to submit and execute Tasks. Apart from
+setting priority for an explicit selection, the WebUI does not submit or edit Tasks,
+schedule work, allocate resources, or manage the Labtasker process. Local mode only
+attaches to an existing instance and never opens its database.
 
 ## Documentation
 

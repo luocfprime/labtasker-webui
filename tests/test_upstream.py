@@ -9,7 +9,7 @@ from labtasker_webui.upstream import Upstream, UpstreamError
 class FakeClient:
     def __init__(self, responses: list[httpx.Response]) -> None:
         self.responses = responses
-        self.requests: list[tuple[str, str, dict[str, str]]] = []
+        self.requests: list[tuple[str, str, dict[str, str], object]] = []
 
     async def __aenter__(self):
         return self
@@ -17,8 +17,8 @@ class FakeClient:
     async def __aexit__(self, *args):
         return None
 
-    async def request(self, method, url, params=None, headers=None):
-        self.requests.append((method, url, headers or {}))
+    async def request(self, method, url, params=None, headers=None, json=None):
+        self.requests.append((method, url, headers or {}, json))
         return self.responses.pop(0)
 
 
@@ -39,6 +39,20 @@ async def test_authorization_header_is_forwarded(monkeypatch) -> None:
     )
     assert result == {"ok": True}
     assert client.requests[0][2]["Authorization"] == "Bearer secret"
+
+
+@pytest.mark.asyncio
+async def test_json_body_is_forwarded(monkeypatch) -> None:
+    client = FakeClient([response(200, json={"ok": True})])
+    monkeypatch.setattr("labtasker_webui.upstream.validate_resolved_destination", lambda *a: None)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client)
+    await Upstream((), False).request(
+        Connection("https://allowed.test", None, 0),
+        "PATCH",
+        "/api/v2/queues/default/tasks/t_ABCDEFGHIJKL",
+        json={"priority": -7},
+    )
+    assert client.requests[0][3] == {"priority": -7}
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,7 @@ from .schemas import (
     ConnectRequest,
     CountResponse,
     GroupPageResponse,
+    PriorityUpdateRequest,
     QueueResponse,
     SelectRequest,
     TaskOrderField,
@@ -464,6 +465,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 connection(session_id),
                 "GET",
                 f"/api/v2/queues/{quote(queue, safe='')}/tasks/{quote(task_id, safe='')}",
+            ),
+            TaskResponse,
+        )
+
+    @app.patch("/api/webui/queues/{queue}/tasks/{task_id}/priority")
+    async def update_task_priority(
+        queue: str,
+        task_id: str,
+        update: PriorityUpdateRequest,
+        session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
+    ) -> Any:
+        return validated(
+            await upstream.request(
+                connection(session_id),
+                "PATCH",
+                f"/api/v2/queues/{quote(queue, safe='')}/tasks/{quote(task_id, safe='')}",
+                json={"priority": update.priority},
             ),
             TaskResponse,
         )
