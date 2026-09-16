@@ -7,6 +7,23 @@ async function open(page:Page){
   await page.getByRole('heading',{name:'robotwin',exact:true}).click();
   await page.getByText('generate-rollouts',{exact:true}).click();
 }
+test('drawer close control is a quiet aligned icon until interaction',async({page})=>{
+  await page.setViewportSize({width:2400,height:900});
+  await open(page);
+  const drawer = page.locator('aside.drawer[aria-label="Task details"]');
+  const close = drawer.getByRole('button',{name:'Close',exact:true});
+  const title = drawer.locator('.drawer-head h2');
+  await expect(close).toBeVisible();
+  await expect(close).toHaveText('');
+  expect(await close.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  const closeBox = (await close.boundingBox())!;
+  const titleBox = (await title.boundingBox())!;
+  expect(closeBox.width).toBe(32);
+  expect(closeBox.height).toBe(32);
+  expect(Math.abs(closeBox.y + closeBox.height / 2 - (titleBox.y + titleBox.height / 2))).toBeLessThanOrEqual(3);
+  await close.hover();
+  expect(await close.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+});
 test('switching Tasks does not carry the previous action error into the new drawer',async({page})=>{
   await open(page);
   await page.route('**/tasks/*/requeue',route=>route.fulfill({status:503,json:{error:{message:'Requeue failed for generate-rollouts'}}}));

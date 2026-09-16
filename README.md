@@ -17,8 +17,10 @@ The key features are:
 - **Routes and Workers:** Collapse route navigation when you need more table space.
   Inspect Idle/Busy Worker counts and last-seen reports; include inactive routes when
   reviewing historical work. Resize Worker columns or double-click them to fit loaded
-  content. These features require Server 2.2 or later; Worker reports require Workers
-  that support observations.
+  content. Open a Worker to inspect its metadata and latest telemetry, filter those
+  JSON fields, or add selected `metadata.*` and `telemetry.*` paths as columns when
+  the Server supplies them. These features require Server 2.2 or later; Worker reports
+  require Workers that support observations.
 - **Flexible result exploration:** Filter Task fields and nested values, or add
   custom columns such as `args.test_num` and `result.succ_rate`. Resize, reorder,
   and double-click columns to fit their contents.

@@ -94,6 +94,9 @@ class WorkerResponse(BaseModel):
     route: str
     status: Literal["idle", "busy"]
     task_id: str | None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    telemetry: dict[str, Any] | None = None
+    telemetry_updated_at: datetime | None = None
     last_seen_at: datetime
     expires_at: datetime
 

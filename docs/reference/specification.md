@@ -269,6 +269,34 @@ default widths are 240, 100, 200, 240 and 210 px respectively. Pointer dragging 
 Left/Right keyboard adjustment change only the chosen column; double-click fits that
 column to loaded content. Widths persist per connection and Queue.
 
+Worker observations may include strict JSON-object `metadata`, nullable strict
+JSON-object `telemetry`, and nullable Server-owned `telemetry_updated_at`. Older
+Servers that omit these fields remain readable as empty metadata and absent
+telemetry. The five existing Worker columns remain the default; telemetry and
+metadata do not add default columns or acquire WebUI-defined metric semantics.
+The Worker Columns control can hide and reorder built-in columns and add explicit
+`metadata.*` or `telemetry.*` JSON paths. Missing paths remain blank. Worker column
+visibility, custom paths, order and widths persist per connection and Queue,
+independently of Task columns and named Task views.
+
+The Worker toolbar supports the existing Worker status selector plus an applied
+advanced expression. The expression is combined with the selected route and status,
+stored in browser history as Worker-only state, and accepts the upstream Worker
+filter contract, including `metadata.*` and `telemetry.*` paths. Text applies on
+Enter or leaving the input group; Apply remains a fallback and IME composition is
+respected.
+
+Opening a Worker row displays a resizable details drawer containing its observation
+fields, Metadata and Telemetry JSON trees, telemetry report time, and raw observation.
+It reuses the Task drawer's Tree/Raw and whole-object Copy behaviors. The drawer is
+restorable through browser history by querying the active Worker list with the exact
+Worker ID; when the observation has expired, it reports that absence rather than
+inventing retained history. Opening the associated Task replaces the visible drawer,
+and Back restores the Worker drawer while the observation remains active. Closing a
+drawer restores focus to its originating row or link. Drawer headers constrain long
+titles so the fixed-size close button remains fully inside the right padding at every
+supported viewport.
+
 Change opens connection settings without discarding the current workspace. Back to
 workspace restores it; a successful connection change clears the query cache.
 Back to workspace is disabled while a connection change is pending. If the change

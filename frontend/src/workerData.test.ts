@@ -15,5 +15,7 @@ test("route union includes waiting Tasks without Workers and idle Workers withou
 });
 test("selected routes intersect expressions with safely quoted case-sensitive values", () => {
   expect(effectiveTaskFilter({filter: "priority > 0 or priority < -1", route: 'GPU"A'})).toBe('(priority > 0 or priority < -1) and ("GPU\\"A" in routes)');
-  expect(workerFilter('GPU"A', 'idle')).toBe('route == "GPU\\"A" and status == "idle"');
+  expect(workerFilter('GPU"A', 'idle', 'metadata.hostname == "node-7"')).toBe(
+    'route == "GPU\\"A" and status == "idle" and (metadata.hostname == "node-7")',
+  );
 });

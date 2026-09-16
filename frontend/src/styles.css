@@ -573,7 +573,8 @@ button:disabled {
   position: relative;
   flex: none;
 }
-.column-menu summary {
+.column-menu summary,
+.column-menu > button {
   display: flex;
   align-items: center;
   height: var(--control-height);
@@ -584,6 +585,7 @@ button:disabled {
   font-size: var(--text-body);
   cursor: pointer;
   list-style: none;
+  background: #fff;
 }
 .column-menu > div {
   position: fixed;
@@ -599,13 +601,15 @@ button:disabled {
   background: #fff;
   box-shadow: 0 8px 22px #1d36531c;
 }
-.column-menu summary {
+.column-menu summary,
+.column-menu > button {
   gap: 12px;
 }
 .column-menu summary::-webkit-details-marker {
   display: none;
 }
-.column-menu summary:after {
+.column-menu summary:after,
+.column-menu > button:after {
   content: "";
   width: 6px;
   height: 6px;
@@ -613,7 +617,8 @@ button:disabled {
   border-bottom: 1.5px solid currentColor;
   transform: translateY(-2px) rotate(45deg);
 }
-.column-menu[open] summary {
+.column-menu[open] summary,
+.column-menu > button[aria-expanded="true"] {
   background: #eceef1;
 }
 .column-menu input[type="checkbox"] {
@@ -902,7 +907,14 @@ th[data-column-id="progress"] {
   padding: 20px 24px;
   border-bottom: 1px solid var(--line);
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
+}
+.drawer-head > div {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
 }
 .drawer-head h2 {
   font-size: 20px;
@@ -911,13 +923,40 @@ th[data-column-id="progress"] {
   margin: 5px 0 3px;
 }
 .close {
+  position: relative;
+  flex: 0 0 32px;
   width: 32px;
   height: 32px;
+  padding: 0;
   border: 0;
-  border-radius: 5px;
-  background: #f2f4f6;
-  font-size: 23px;
-  color: #536071;
+  border-radius: 6px;
+  background: transparent;
+  color: #687385;
+  margin-left: auto;
+}
+.close::before,
+.close::after {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: 9px;
+  width: 14px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.close::before {
+  transform: rotate(45deg);
+}
+.close::after {
+  transform: rotate(-45deg);
+}
+.close:hover {
+  background: #f3f5f7;
+  color: #394454;
+}
+.close:active {
+  background: #e9edf1;
 }
 .drawer-body {
   overflow: auto;

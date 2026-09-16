@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   flexRender,
   getCoreRowModel,
@@ -12,6 +13,12 @@ import { api, ApiRequestError } from "./api";
 import { Select } from "./Select";
 import { combineRoutes, readGroups, workerFilter, workerFreshness, type Worker } from "./workerData";
 import { isPermanentRequestError } from "./queryPolicy";
+import { FilterInput } from "./FilterInput";
+import { JsonBlock } from "./JsonView";
+import { pathValue } from "./customColumns";
+import { useAnchoredPanel } from "./useAnchoredPanel";
+import { workerColumns, workerPath } from "./workspacePreferences";
+import { saveSetting } from "./profile";
 
 const polling = (query: {state: {error: Error | null}}) => document.hidden || (isPermanentRequestError(query.state.error) || query.state.error instanceof ApiRequestError && query.state.error.status === 501) ? false : 15_000;
 function duration(ms: number) { const seconds = Math.max(0, Math.floor(ms / 1000)); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
@@ -59,18 +66,31 @@ export function RouteSidebar({counts, route, choose, inactive, setInactive}: {
     <label className="inactive-routes"><span>Inactive routes</span><input type="checkbox" aria-label="Include inactive routes" checked={inactive} onChange={event => setInactive(event.target.checked)} /><span className="inactive-switch" aria-hidden="true" /></label>
   </aside>;
 }
-export function WorkersPanel({queue, server, route, counts, status, setStatus, openTask, columnSizing, setColumnSizing, notify}: {
+type WorkerLayout = {
+  visible: string[];
+  custom: string[];
+  order: string[];
+  widths: ColumnSizingState;
+};
+const workerLabels: Record<string, string> = {
+  worker: "Worker", status: "Status", route: "Route", task: "Task", lastSeen: "Last seen",
+};
+
+export function WorkersPanel({queue, server, route, counts, status, setStatus, filter, setFilter, openTask, openWorker, layout, setLayout, notify}: {
   queue: string; server: string; route: string; counts: Counts;
   status: string; setStatus: (status: string) => void; openTask: (id: string) => void;
-  columnSizing: ColumnSizingState; setColumnSizing: OnChangeFn<ColumnSizingState>;
+  filter: string; setFilter: (filter: string) => void; openWorker: (id: string) => void;
+  layout: WorkerLayout; setLayout: (layout: WorkerLayout | ((current: WorkerLayout) => WorkerLayout)) => void;
   notify: (message: string) => void;
 }) {
-  const filter = workerFilter(route, status);
+  const [draftFilter, setDraftFilter] = useState(filter);
+  useEffect(() => setDraftFilter(filter), [filter]);
+  const queryFilter = workerFilter(route, status, filter);
   const list = useInfiniteQuery({
-    queryKey: ["workers", server, queue, filter], initialPageParam: null as string | null,
+    queryKey: ["workers", server, queue, queryFilter], initialPageParam: null as string | null,
     queryFn: ({pageParam}) => {
       const params = new URLSearchParams();
-      if (filter) params.set("filter", filter);
+      if (queryFilter) params.set("filter", queryFilter);
       if (pageParam) params.set("cursor", pageParam);
       return api<{items: Worker[]; next_cursor: string | null}>(`/api/webui/queues/${encodeURIComponent(queue)}/workers?${params}`);
     },
@@ -97,10 +117,10 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
   const idle = groups?.filter(g => g.key.status === "idle").reduce((n,g) => n+g.count,0);
   const busy = groups?.filter(g => g.key.status === "busy").reduce((n,g) => n+g.count,0);
   const unavailable = !groups || !!counts.workers.error;
-  const columns = useMemo<ColumnDef<Worker>[]>(() => [
+  const builtInColumns = useMemo<ColumnDef<Worker>[]>(() => [
     {
       id: "worker", header: "Worker", size: 240,
-      cell: ({row}) => <code data-tooltip={row.original.id}>{row.original.id}</code>,
+      cell: ({row}) => <button type="button" className="link worker-link" data-worker-link={row.original.id} data-tooltip={row.original.id} onClick={event => {event.stopPropagation(); openWorker(row.original.id);}}>{row.original.id}</button>,
     },
     {
       id: "status", header: "Status", size: 100,
@@ -112,7 +132,7 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
     },
     {
       id: "task", header: "Task", size: 240,
-      cell: ({row}) => row.original.task_id ? <button className="link" data-task-link={row.original.task_id} data-tooltip={row.original.task_id} onClick={() => openTask(row.original.task_id!)}>{row.original.task_id}</button> : "—",
+      cell: ({row}) => row.original.task_id ? <button className="link" data-task-link={row.original.task_id} data-tooltip={row.original.task_id} onClick={event => {event.stopPropagation(); openTask(row.original.task_id!);}}>{row.original.task_id}</button> : "—",
     },
     {
       id: "lastSeen", header: "Last seen", size: 210,
@@ -122,15 +142,30 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
           {!list.error && freshness.delayed && <small className="observation-delayed">{freshness.expired ? "Observation expired" : `Update delayed · Expires in ${duration(freshness.remaining)}`}</small>}</>;
       },
     },
-  ], [counts, list.error, now, openTask]);
+  ], [counts, list.error, now, openTask, openWorker]);
+  const columnIds = [...workerColumns, ...layout.custom.map(path => `path:${path}`)];
+  const orderedIds = [...layout.order.filter(id => columnIds.includes(id)), ...columnIds.filter(id => !layout.order.includes(id))];
+  const columns = useMemo(() => {
+    const byId = new Map(builtInColumns.map(column => [column.id, column]));
+    for (const path of layout.custom) {
+      byId.set(`path:${path}`, {
+        id: `path:${path}`, header: path, size: 160,
+        cell: ({row}: {row: {original: Worker}}) => pathValue(row.original, path),
+      });
+    }
+    return orderedIds.map(id => byId.get(id)).filter((column): column is ColumnDef<Worker> => !!column);
+  }, [builtInColumns, layout.custom, orderedIds.join("\n")]);
   const table = useReactTable({
     data: rows,
     columns,
     columnResizeMode: "onChange",
-    onColumnSizingChange: setColumnSizing,
+    onColumnSizingChange: (updater: Parameters<OnChangeFn<ColumnSizingState>>[0]) => setLayout(current => ({...current, widths: typeof updater === "function" ? updater(current.widths) : updater})),
     defaultColumn: {minSize: 60, maxSize: 10000, size: 160},
     getRowId: worker => worker.id,
-    state: {columnSizing},
+    state: {
+      columnSizing: layout.widths,
+      columnVisibility: Object.fromEntries(columnIds.map(id => [id, layout.visible.includes(id)])),
+    },
     getCoreRowModel: getCoreRowModel(),
   });
   const fitColumn = (id: string) => {
@@ -149,7 +184,8 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
     let width = measure(String(column.columnDef.header), header) + 36;
     for (const worker of rows) {
       const freshness = workerFreshness(worker, now);
-      const value = id === "worker" ? worker.id
+      const value = id.startsWith("path:") ? pathValue(worker, id.slice(5))
+        : id === "worker" ? worker.id
         : id === "status" ? (worker.status === "idle" ? "Idle" : "Busy")
           : id === "route" ? worker.route
             : id === "task" ? worker.task_id || "—"
@@ -159,7 +195,7 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
       width = Math.max(width, measure(value) + (id === "status" ? 38 : id === "route" ? 42 : 24));
     }
     const fitted = Math.min(10000, Math.max(60, Math.ceil(width)));
-    setColumnSizing(current => ({...current, [id]: fitted}));
+    setLayout(current => ({...current, widths: {...current.widths, [id]: fitted}}));
     notify(`${String(column.columnDef.header)} fitted to content · ${fitted}px`);
   };
   return <section className="workers-panel" aria-label="Workers">
@@ -168,7 +204,13 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
       <button className="worker-idle-count" aria-pressed={status === "idle"} onClick={() => setStatus(status === "idle" ? "" : "idle")}><strong>{unavailable ? "—" : idle}</strong> Idle</button>
       <button className="worker-busy-count" aria-pressed={status === "busy"} onClick={() => setStatus(status === "busy" ? "" : "busy")}><strong>{unavailable ? "—" : busy}</strong> Busy</button>
     </div>
-    <div className="worker-toolbar"><Select label="Worker status" value={status} onChange={setStatus} options={[{value: "", label: "All statuses"}, {value: "idle", label: "Idle"}, {value: "busy", label: "Busy"}]} /><span>Latest Worker observations</span></div>
+    <div className="toolbar worker-toolbar">
+      <Select label="Worker status" value={status} onChange={setStatus} options={[{value: "", label: "All statuses"}, {value: "idle", label: "Idle"}, {value: "busy", label: "Busy"}]} />
+      <FilterInput kind="worker" label="Worker advanced filter" value={draftFilter} onChange={setDraftFilter}
+        onApply={() => setFilter(draftFilter)} onCommit={setFilter} />
+      <WorkerColumnMenu layout={layout} setLayout={setLayout} />
+      <button className="secondary compact" onClick={() => setFilter(draftFilter)}>Apply</button>
+    </div>
     {list.error && <p className="muted">Worker observations unavailable. Use Refresh to retry.</p>}
     <div className="worker-table table-wrap" ref={scroll}>
       <table style={{width: table.getTotalSize(), minWidth: "100%"}}>
@@ -194,12 +236,14 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
                 const min = header.column.columnDef.minSize ?? 60;
                 const max = header.column.columnDef.maxSize ?? 10000;
                 const size = Math.min(max, Math.max(min, header.column.getSize() + (event.key === "ArrowRight" ? 16 : -16)));
-                setColumnSizing(current => ({...current, [header.column.id]: size}));
+                setLayout(current => ({...current, widths: {...current.widths, [header.column.id]: size}}));
               }} />}
           </th>)}
           <th className="table-filler" aria-hidden="true" />
         </tr>)}</thead>
-        <tbody>{table.getRowModel().rows.map(row => <tr key={row.id}>
+        <tbody>{table.getRowModel().rows.map(row => <tr key={row.id} data-worker-id={row.original.id} tabIndex={0}
+          onClick={() => openWorker(row.original.id)}
+          onKeyDown={event => {if (event.currentTarget === event.target && (event.key === "Enter" || event.key === " ")) {event.preventDefault(); openWorker(row.original.id);}}}>
           {row.getVisibleCells().map(cell => <td key={cell.id} data-column-id={cell.column.id}>
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </td>)}
@@ -212,6 +256,174 @@ export function WorkersPanel({queue, server, route, counts, status, setStatus, o
     </div>
     <div className="list-summary">{rows.length} loaded · {list.dataUpdatedAt ? `Updated ${new Date(list.dataUpdatedAt).toLocaleTimeString()}` : "Waiting for observations"}</div>
   </section>;
+}
+
+function WorkerColumnMenu({layout, setLayout}: {
+  layout: WorkerLayout;
+  setLayout: (layout: WorkerLayout | ((current: WorkerLayout) => WorkerLayout)) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dragColumn, setDragColumn] = useState<string | null>(null);
+  const [dropColumn, setDropColumn] = useState<string | null>(null);
+  const [newPath, setNewPath] = useState("");
+  const [pathError, setPathError] = useState("");
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useAnchoredPanel(open, trigger, panel, 370, "right");
+  const ids = [...workerColumns, ...layout.custom.map(path => `path:${path}`)];
+  const ordered = [...layout.order.filter(id => ids.includes(id)), ...ids.filter(id => !layout.order.includes(id))];
+  const label = (id: string) => id.startsWith("path:") ? id.slice(5) : workerLabels[id];
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    };
+    const dismissFocus = (event: FocusEvent) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("focusin", dismissFocus);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("focusin", dismissFocus);
+    };
+  }, [open]);
+  const move = (id: string, offset: number) => {
+    const next = [...ordered];
+    const index = next.indexOf(id);
+    if (index + offset < 0 || index + offset >= next.length) return;
+    [next[index], next[index + offset]] = [next[index + offset], next[index]];
+    setLayout(current => ({...current, order: next}));
+  };
+  return <div className="column-menu worker-column-menu" ref={root}
+    onKeyDown={event => {
+      if (event.key === "Escape" && open) {
+        event.preventDefault(); setOpen(false); trigger.current?.focus();
+      }
+    }}>
+    <button ref={trigger} type="button" aria-label="Worker columns" aria-expanded={open} onClick={() => setOpen(value => !value)}>Columns</button>
+    {open && <div ref={panel} aria-label="Worker columns menu">
+      <div className="column-list">
+        {ordered.map(column => <div className={`column-choice${dropColumn === column ? " drop-target" : ""}`} key={column}
+          data-column-order-id={column}
+          onDragOver={event => {if (dragColumn) {event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropColumn(column);}}}
+          onDrop={event => {
+            event.preventDefault();
+            if (dragColumn && dragColumn !== column) {
+              const next = [...ordered];
+              const from = next.indexOf(dragColumn), to = next.indexOf(column);
+              next.splice(from, 1); next.splice(to, 0, dragColumn);
+              setLayout(current => ({...current, order: next}));
+            }
+            setDragColumn(null); setDropColumn(null);
+          }}>
+          <button type="button" className="column-drag-handle" draggable aria-label={`Reorder ${label(column)}`}
+            data-tooltip="Drag to reorder · Arrow keys to move"
+            onDragStart={event => {setDragColumn(column); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", column);}}
+            onDragEnd={() => {setDragColumn(null); setDropColumn(null);}}
+            onKeyDown={event => {if (["ArrowUp", "ArrowDown"].includes(event.key)) {event.preventDefault(); move(column, event.key === "ArrowUp" ? -1 : 1);}}}>⠿</button>
+          <label><input type="checkbox" checked={layout.visible.includes(column)} onChange={() => setLayout(current => ({
+            ...current,
+            visible: current.visible.includes(column) ? current.visible.filter(id => id !== column) : [...current.visible, column],
+          }))} /><span data-tooltip={label(column)}>{label(column)}</span></label>
+          {column.startsWith("path:") && <button type="button" aria-label={`Remove ${label(column)}`} onClick={() => setLayout(current => ({
+            ...current,
+            custom: current.custom.filter(path => `path:${path}` !== column),
+            visible: current.visible.filter(id => id !== column),
+            order: current.order.filter(id => id !== column),
+            widths: Object.fromEntries(Object.entries(current.widths).filter(([id]) => id !== column)),
+          }))}>×</button>}
+        </div>)}
+      </div>
+      <form className="custom-column-form" onSubmit={event => {
+        event.preventDefault();
+        const path = newPath.trim();
+        if (!workerPath(path)) {setPathError("Use a metadata.* or telemetry.* path, e.g. telemetry.gpu.utilization."); return;}
+        if (layout.custom.includes(path)) {setPathError("This column already exists."); return;}
+        setLayout(current => ({...current, custom: [...current.custom, path], visible: [...current.visible, `path:${path}`]}));
+        setNewPath(""); setPathError("");
+      }}>
+        <label htmlFor="worker-custom-column-path">Worker custom column · JSON path</label>
+        <div><input id="worker-custom-column-path" value={newPath} placeholder="metadata.hostname" onChange={event => setNewPath(event.target.value)} />
+          <button type="submit" aria-label="Add Worker column">Add</button></div>
+        <small>Use metadata.* or telemetry.*. Missing values stay blank.</small>
+        {pathError && <small role="alert">{pathError}</small>}
+      </form>
+    </div>}
+  </div>;
+}
+
+function WorkerTime({value}: {value: string | null}) {
+  if (!value) return <>—</>;
+  return <time dateTime={value} data-tooltip={new Date(value).toISOString()}>{new Date(value).toLocaleString()}</time>;
+}
+
+export function WorkerDrawer({queue, server, workerId, close, openTask}: {
+  queue: string; server: string; workerId: string;
+  close: (replaceHistory?: boolean) => void; openTask: (id: string) => void;
+}) {
+  const [width, setWidth] = useState(() => {
+    const stored = Number(localStorage.getItem("labtasker:drawerWidth"));
+    return Number.isFinite(stored) && stored >= 480 && stored <= 800 ? stored : 600;
+  });
+  const query = useQuery({
+    queryKey: ["worker", server, queue, workerId],
+    queryFn: async () => {
+      const params = new URLSearchParams({filter: `id == ${JSON.stringify(workerId)}`});
+      const page = await api<{items: Worker[]}>(`/api/webui/queues/${encodeURIComponent(queue)}/workers?${params}`);
+      return page.items.find(worker => worker.id === workerId) || null;
+    },
+    refetchInterval: polling,
+  });
+  const worker = query.data;
+  const resizeFrom = (startX: number, startWidth: number) => {
+    const move = (event: PointerEvent) => setWidth(Math.min(800, Math.max(480, startWidth + startX - event.clientX)));
+    const finish = () => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", finish);
+      setWidth(current => {saveSetting("labtasker:drawerWidth", String(current)); return current;});
+    };
+    addEventListener("pointermove", move); addEventListener("pointerup", finish, {once: true});
+  };
+  return <Dialog.Root open modal={false} onOpenChange={open => !open && close()}>
+    <Dialog.Portal><Dialog.Content asChild aria-describedby={undefined}
+      onInteractOutside={event => {
+        if (event.target instanceof Element && event.target.closest("[data-worker-id], [data-task-link], #corner-notifications, .observation-notice, .profile-save-error")) event.preventDefault();
+        else {event.preventDefault(); close(true);}
+      }}>
+      <aside className="drawer" aria-label="Worker details" style={{width}}>
+        <div className="drawer-resize" role="separator" aria-label="Resize Worker details" aria-orientation="vertical"
+          aria-valuemin={480} aria-valuemax={800} aria-valuenow={width} tabIndex={0}
+          onPointerDown={event => resizeFrom(event.clientX, width)}
+          onKeyDown={event => {
+            if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+            event.preventDefault();
+            const next = Math.min(800, Math.max(480, width + (event.key === "ArrowLeft" ? 20 : -20)));
+            setWidth(next); saveSetting("labtasker:drawerWidth", String(next));
+          }} />
+        <div className="drawer-head"><div><Dialog.Title asChild><h2>{workerId}</h2></Dialog.Title></div>
+          <Dialog.Close asChild><button className="close" aria-label="Close" /></Dialog.Close>
+        </div>
+        {query.isLoading ? <div className="loading">Loading Worker…</div>
+          : query.error ? <div className="error">{query.error.message}</div>
+            : !worker ? <div className="drawer-body"><div className="empty"><h2>Worker observation expired</h2><p>This Worker is no longer present in the active observation list.</p></div></div>
+              : <div className="drawer-body">
+                <div className="task-summary"><span className={`badge worker-${worker.status}`}>{worker.status === "idle" ? "Idle" : "Busy"}</span><span className="worker-route"><span>{worker.route}</span></span></div>
+                <section className="detail-section"><h3>Observation</h3><dl>
+                  <dt>Queue</dt><dd>{worker.queue}</dd>
+                  <dt>Route</dt><dd>{worker.route}</dd>
+                  <dt>Current Task</dt><dd>{worker.task_id ? <button type="button" className="link" data-task-link={worker.task_id}
+                    onClick={() => openTask(worker.task_id!)}>{worker.task_id}</button> : "—"}</dd>
+                  <dt>Last seen</dt><dd><WorkerTime value={worker.last_seen_at} /></dd>
+                  <dt>Expires</dt><dd><WorkerTime value={worker.expires_at} /></dd>
+                </dl></section>
+                <JsonBlock title="Metadata" value={worker.metadata} />
+                <JsonBlock title="Telemetry" value={worker.telemetry} meta={worker.telemetry_updated_at ? <>Updated <WorkerTime value={worker.telemetry_updated_at} /></> : undefined} />
+                <JsonBlock title="Raw Worker" value={worker} />
+              </div>}
+      </aside>
+    </Dialog.Content></Dialog.Portal>
+  </Dialog.Root>;
 }
 
 export function QueueWorkerSummary({queue, server}: {queue: string; server: string}) {

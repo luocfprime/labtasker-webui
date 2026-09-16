@@ -1,4 +1,4 @@
-const keys = ["labtasker:workspace:v1", "labtasker:queueLayouts:v1", "labtasker:views:v1", "labtasker:column-widths", "labtasker:columns:v3", "labtasker:customColumns:v1", "labtasker:columnOrder:v1", "labtasker:drawerWidth", "labtasker:lastQueue", "labtasker:filterPresets:v1", "labtasker:filters:v1"];
+const keys = ["labtasker:workspace:v1", "labtasker:queueLayouts:v1", "labtasker:views:v1", "labtasker:column-widths", "labtasker:columns:v3", "labtasker:customColumns:v1", "labtasker:columnOrder:v1", "labtasker:drawerWidth", "labtasker:lastQueue", "labtasker:filterPresets:v1", "labtasker:workerFilterPresets:v1", "labtasker:filters:v1"];
 const pendingKey = "labtasker:profilePending:v1";
 function readPending(): Record<string, string> {
   try {

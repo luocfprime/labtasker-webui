@@ -19,6 +19,7 @@ UI_KEYS = {
     "labtasker:drawerWidth",
     "labtasker:lastQueue",
     "labtasker:filterPresets:v1",
+    "labtasker:workerFilterPresets:v1",
     "labtasker:filters:v1",
 }
 

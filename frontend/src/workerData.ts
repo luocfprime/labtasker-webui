@@ -2,7 +2,9 @@ import { api } from "./api";
 
 export type Worker = {
   id: string; queue: string; route: string; status: "idle" | "busy";
-  task_id: string | null; last_seen_at: string; expires_at: string;
+  task_id: string | null; metadata: Record<string, unknown>;
+  telemetry: Record<string, unknown> | null; telemetry_updated_at: string | null;
+  last_seen_at: string; expires_at: string;
 };
 export type Group = {key: Record<string, string>; count: number};
 type GroupPage = {group_by: string[]; count: number; items: Group[]; next_cursor: string | null};
@@ -48,6 +50,10 @@ export function workerFreshness(worker: Worker, now: number) {
   const remaining = Math.max(0, Date.parse(worker.expires_at) - now);
   return {age, remaining, delayed: age > 120_000, expired: remaining === 0};
 }
-export function workerFilter(route: string, status: string) {
-  return [route && `route == ${JSON.stringify(route)}`, status && `status == ${JSON.stringify(status)}`].filter(Boolean).join(" and ");
+export function workerFilter(route: string, status: string, filter = "") {
+  return [
+    route && `route == ${JSON.stringify(route)}`,
+    status && `status == ${JSON.stringify(status)}`,
+    filter.trim() && `(${filter.trim()})`,
+  ].filter(Boolean).join(" and ");
 }

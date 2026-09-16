@@ -1,10 +1,10 @@
 import { ObservationNotices } from "./ObservationNotices";
 import { workspacePreferences, saveWorkspacePreferences } from "./workspacePreferences";
 import { api, ApiRequestError } from "./api";
-import { QueueWorkerSummary, RouteSidebar, RouteChips, RouteCountsContext, WorkersPanel, useRouteCounts } from "./Observations";
+import { QueueWorkerSummary, RouteSidebar, RouteChips, RouteCountsContext, WorkerDrawer, WorkersPanel, useRouteCounts } from "./Observations";
 import { effectiveTaskFilter } from "./countFilters";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MutableRefObject } from "react";
 import {
   useInfiniteQuery,
   useIsMutating,
@@ -30,6 +30,9 @@ import { Select } from "./Select";
 import { messages as m } from "./messages";
 import { ServerVersionWarning } from "./ServerVersionWarning";
 import { useAnchoredPanel } from "./useAnchoredPanel";
+import { copyJson, JsonBlock, JsonNode } from "./JsonView";
+
+export { JsonNode } from "./JsonView";
 
 export function PriorityValue({ value }: { value: number }) {
   return (
@@ -889,15 +892,18 @@ function Workspace({
   useEffect(() => {saveWorkspacePreferences(scope, preferences);}, [scope, preferences]);
   const [tab, setTab] = useState(() => new URLSearchParams(location.search).get("tab") === "workers" ? "workers" : "tasks");
   const [workerStatus, setWorkerStatus] = useState(() => new URLSearchParams(location.search).get("worker_status") || "");
+  const [workerFilterExpression, setWorkerFilterExpression] = useState(() => new URLSearchParams(location.search).get("worker_filter") || "");
   const routeCounts = useRouteCounts(queue, server, preferences.inactive);
-  const navigatePanel = (nextTab: string, nextStatus = workerStatus) => {
+  const navigatePanel = (nextTab: string, nextStatus = workerStatus, nextWorkerFilter = workerFilterExpression) => {
     const url = new URL(location.href);
     if (nextTab === "workers") url.searchParams.set("tab", "workers"); else url.searchParams.delete("tab");
     if (nextStatus) url.searchParams.set("worker_status", nextStatus); else url.searchParams.delete("worker_status");
+    if (nextWorkerFilter) url.searchParams.set("worker_filter", nextWorkerFilter); else url.searchParams.delete("worker_filter");
     url.searchParams.delete("task");
+    url.searchParams.delete("worker");
     if (url.href === location.href) return;
     history.pushState({}, "", url);
-    setTab(nextTab); setWorkerStatus(nextStatus); setTaskId(null);
+    setTab(nextTab); setWorkerStatus(nextStatus); setWorkerFilterExpression(nextWorkerFilter); setTaskId(null); setWorkerId(null);
   };
   const [initialLayout] = useState(() => readQueueLayout(scope));
   const [filters, setFilters] = useState<Filters>(() => {
@@ -1044,9 +1050,15 @@ function Workspace({
     saveQueueLayout(scope, {visible: [...visibleColumns], custom: customPaths, order: savedOrder, widths: columnSizing});
   }, [scope, visibleColumns, customPaths, savedOrder, columnSizing]);
   const originTaskId = useRef<string | null>(null);
+  const originWorkerId = useRef<string | null>(null);
+  const drawerTransition = useRef(false);
   const [taskId, setTaskId] = useState<string | null>(() =>
     new URLSearchParams(location.search).get("task"),
   );
+  const [workerId, setWorkerId] = useState<string | null>(() => {
+    const url = new URLSearchParams(location.search);
+    return url.get("task") ? null : url.get("worker");
+  });
   const [confirm, setConfirm] = useState<DeleteTarget | null>(null);
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
@@ -1182,6 +1194,7 @@ function Workspace({
       if (url.get("queue") !== queue) return;
       setTab(url.get("tab") === "workers" ? "workers" : "tasks");
       setWorkerStatus(url.get("worker_status") || "");
+      setWorkerFilterExpression(url.get("worker_filter") || "");
       const restored = filtersFromUrl();
       if (!sameFilters(filters, restored)) {
         setFilters(restored);
@@ -1191,6 +1204,7 @@ function Workspace({
         }
       }
       setTaskId(url.get("task"));
+      setWorkerId(url.get("task") ? null : url.get("worker"));
     };
     addEventListener("popstate", onBack);
     return () => removeEventListener("popstate", onBack);
@@ -1205,6 +1219,12 @@ function Workspace({
       );
     }
   }, [taskId, tab]);
+  useEffect(() => {
+    if (!workerId && originWorkerId.current) {
+      const id = originWorkerId.current;
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(`.worker-table [data-worker-link="${CSS.escape(id)}"], .worker-table [data-worker-id="${CSS.escape(id)}"]`)?.focus());
+    }
+  }, [workerId]);
   const apply = () => {
     if (sameFilters(filters, draft)) return;
     setFilters(draft);
@@ -1534,17 +1554,32 @@ function Workspace({
     void matchingCount.refetch();
   };
   const openTask = (id: string) => {
+    if (workerId) {
+      // A newly mounted Radix dialog can observe the pointer event that
+      // selected it from the previous dialog as an outside interaction.
+      drawerTransition.current = true;
+      window.setTimeout(() => {drawerTransition.current = false;}, 250);
+    }
     originTaskId.current = id;
     const url = new URL(location.href);
     url.searchParams.set("task", id);
+    url.searchParams.delete("worker");
     if (taskId) {
       history.replaceState(history.state, "", url);
     } else {
       history.pushState({ labtaskerDrawer: true }, "", url);
     }
     setTaskId(id);
+    setWorkerId(null);
   };
   const closeTask = (replaceHistory = false) => {
+    // Radix may report the old drawer closing after another inspector has
+    // already replaced it. In that case the URL/history now belongs to the
+    // new inspector and must not be changed.
+    if (!new URL(location.href).searchParams.has("task")) {
+      setTaskId(null);
+      return;
+    }
     if (replaceHistory) originTaskId.current = null;
     if (!replaceHistory && history.state?.labtaskerDrawer) {
       history.back();
@@ -1553,6 +1588,29 @@ function Workspace({
       url.searchParams.delete("task");
       history.replaceState({}, "", url);
       setTaskId(null);
+    }
+  };
+  const openWorker = (id: string) => {
+    originWorkerId.current = id;
+    const url = new URL(location.href);
+    url.searchParams.set("worker", id);
+    url.searchParams.delete("task");
+    if (workerId || taskId) history.replaceState(history.state, "", url);
+    else history.pushState({labtaskerDrawer: true}, "", url);
+    setWorkerId(id); setTaskId(null);
+  };
+  const closeWorker = (replaceHistory = false) => {
+    if (!new URL(location.href).searchParams.has("worker")) {
+      setWorkerId(null);
+      return;
+    }
+    if (replaceHistory) originWorkerId.current = null;
+    if (!replaceHistory && history.state?.labtaskerDrawer) history.back();
+    else {
+      const url = new URL(location.href);
+      url.searchParams.delete("worker");
+      history.replaceState({}, "", url);
+      setWorkerId(null);
     }
   };
   return (
@@ -1578,9 +1636,9 @@ function Workspace({
             setFilters({...view.filters, route: view.filters.route || ""}); setDraft({...view.filters, route: view.filters.route || ""}); setVisibleColumns(new Set(view.visible));
             setCustomPaths(view.custom.filter(path => pathParts(path))); setSavedOrder(view.order); setColumnSizing(view.widths);
             if (!sameTaskRange(filters, view.filters)) setSelected(new Set());
-            setTaskId(null);
+            setTaskId(null); setWorkerId(null);
           }} />
-        <button className="secondary" onClick={() => {refreshList(); void routeCounts.tasks.refetch(); void routeCounts.workers.refetch(); void qc.invalidateQueries({queryKey: ["workers", server, queue]});}}>
+        <button className="secondary" onClick={() => {refreshList(); void routeCounts.tasks.refetch(); void routeCounts.workers.refetch(); void qc.invalidateQueries({queryKey: ["workers", server, queue]}); void qc.invalidateQueries({queryKey: ["worker", server, queue]});}}>
           {tasks.isFetching && <Spinner />} {m.common.refresh}
         </button>
       </div>
@@ -1588,7 +1646,7 @@ function Workspace({
       <ObservationNotices key={`${server}/${queue}`} server={server} queue={queue} />
       <RouteCountsContext.Provider value={routeCounts}><div className={`queue-workspace${preferences.collapsed ? " routes-collapsed" : ""}${resizingRoutes ? " resizing-routes" : ""}`} style={{"--route-preferred-width": `${preferences.width}px`} as CSSProperties}>
         <div id="queue-routes" className="route-rail" aria-hidden={preferences.collapsed} inert={preferences.collapsed}><RouteSidebar counts={routeCounts} route={filters.route || ""}
-          choose={route => {applyFields({route}); setTaskId(null);}}
+          choose={route => {applyFields({route}); setTaskId(null); setWorkerId(null);}}
           inactive={preferences.inactive} setInactive={inactive => setPreferences(current => ({...current, inactive}))} />
           <div className="route-resizer" role="separator" aria-label="Resize sidebar" aria-orientation="vertical"
             aria-valuemin={160} aria-valuemax={480} aria-valuenow={preferences.width} tabIndex={preferences.collapsed ? -1 : 0}
@@ -1614,12 +1672,15 @@ function Workspace({
             {filters.route && <span className="active-route" data-tooltip={filters.route}>{filters.route}</span>}
           </div>
           {tab === "workers" && <WorkersPanel queue={queue} server={server} route={filters.route || ""} counts={routeCounts}
-            status={workerStatus} setStatus={value => navigatePanel("workers", value)} openTask={openTask}
-            columnSizing={preferences.workerWidths}
-            setColumnSizing={updater => setPreferences(current => ({
-              ...current,
-              workerWidths: typeof updater === "function" ? updater(current.workerWidths) : updater,
-            }))}
+            status={workerStatus} setStatus={value => navigatePanel("workers", value)}
+            filter={workerFilterExpression} setFilter={value => navigatePanel("workers", workerStatus, value)}
+            openTask={openTask} openWorker={openWorker}
+            layout={{visible: preferences.workerVisible, custom: preferences.workerCustom, order: preferences.workerOrder, widths: preferences.workerWidths}}
+            setLayout={updater => setPreferences(current => {
+              const layout = {visible: current.workerVisible, custom: current.workerCustom, order: current.workerOrder, widths: current.workerWidths};
+              const next = typeof updater === "function" ? updater(layout) : updater;
+              return {...current, workerVisible: next.visible, workerCustom: next.custom, workerOrder: next.order, workerWidths: next.widths};
+            })}
             notify={notify} />}
           <div className="task-workspace" hidden={tab !== "tasks"}>
       <div className="stats" aria-label="Task status counts">
@@ -2005,6 +2066,7 @@ function Workspace({
           queue={queue}
           taskId={taskId}
           close={closeTask}
+          drawerTransition={drawerTransition}
           changed={() => {
             tasks.refetch();
             qc.invalidateQueries({ queryKey: ["queues"] });
@@ -2013,6 +2075,9 @@ function Workspace({
           }}
           requestDelete={(id) => setConfirm({ task_ids: [id] })}
         />
+      )}{" "}
+      {workerId && !taskId && (
+        <WorkerDrawer queue={queue} server={server} workerId={workerId} close={closeWorker} openTask={openTask} />
       )}{" "}
       {confirm && (
         <DeleteDialog
@@ -2034,136 +2099,18 @@ function Workspace({
   );
 }
 
-function copyJson(value: unknown) {
-  const text =
-    typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  return navigator.clipboard.writeText(text);
-}
-
-export function JsonNode({
-  label,
-  value,
-  depth = 0,
-  copyable = true,
-}: {
-  label?: string;
-  value: unknown;
-  depth?: number;
-  copyable?: boolean;
-}) {
-  const prefix =
-    label === undefined ? null : <span className="json-key">{label}</span>;
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    const kind = Array.isArray(value) ? m.json.array : m.json.object;
-    return (
-      <details className="json-node" open={depth < 2}>
-        <summary>
-          {prefix}{" "}
-          <span className="json-kind">
-            {kind} · {entries.length}
-          </span>
-        </summary>
-        {copyable && (
-          <button
-            className="json-copy"
-            aria-label={m.json.copyValue(label)}
-            onClick={() => void copyJson(value)}
-          >
-            {m.common.copy}
-          </button>
-        )}
-        <div className="json-children">
-          {entries.length ? (
-            entries.map(([key, child]) => (
-              <JsonNode
-                key={key}
-                label={key}
-                value={child}
-                depth={depth + 1}
-                copyable={copyable}
-              />
-            ))
-          ) : (
-            <span className="json-empty">{m.common.empty}</span>
-          )}
-        </div>
-      </details>
-    );
-  }
-  let rendered: ReactNode;
-  if (typeof value === "string" && /^https?:\/\/[^\s]+$/i.test(value)) {
-    rendered = (
-      <a href={value} target="_blank" rel="noopener noreferrer">
-        {value}
-      </a>
-    );
-  } else if (typeof value === "string") {
-    rendered = <span className="json-string">{JSON.stringify(value)}</span>;
-  } else if (value === null) {
-    rendered = <span className="json-null">null</span>;
-  } else {
-    rendered = <span className="json-scalar">{String(value)}</span>;
-  }
-  return (
-    <div className="json-leaf">
-      {prefix} {rendered}
-      {copyable && (
-        <button
-          aria-label={m.json.copyValue(label)}
-          onClick={() => void copyJson(value)}
-        >
-          {m.common.copy}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function JsonBlock({
-  title,
-  value,
-  meta,
-}: {
-  title: string;
-  value: unknown;
-  meta?: ReactNode;
-}) {
-  const [raw, setRaw] = useState(false);
-  return (
-    <section className="detail-section">
-      <div className="section-title">
-        <div className="section-heading">
-          <h3>{title}</h3>
-          {meta && <span className="section-meta">{meta}</span>}
-        </div>
-        <button className="link" onClick={() => setRaw(!raw)}>
-          {raw ? m.json.tree : m.json.raw}
-        </button>
-        <button className="link" onClick={() => void copyJson(value)}>
-          {m.common.copy}
-        </button>
-      </div>
-      {raw ? (
-        <pre>{JSON.stringify(value, null, 2)}</pre>
-      ) : (
-        <div className="json-tree">
-          <JsonNode value={value} />
-        </div>
-      )}
-    </section>
-  );
-}
 export function TaskDrawer({
   queue,
   taskId,
   close,
+  drawerTransition,
   changed,
   requestDelete,
 }: {
   queue: string;
   taskId: string;
   close: (replaceHistory?: boolean) => void;
+  drawerTransition?: MutableRefObject<boolean>;
   changed: () => void;
   requestDelete: (id: string) => void;
 }) {
@@ -2243,7 +2190,8 @@ export function TaskDrawer({
           }}
           onInteractOutside={(event) => {
             // Task links switch the inspector; notification actions leave it open.
-            if (event.target instanceof Element && event.target.closest("tr[data-task-id], [data-task-link], #corner-notifications, .observation-notice, .profile-save-error")) {
+            if (drawerTransition?.current || (event.target instanceof Element && event.target.closest("tr[data-task-id], [data-task-link], #corner-notifications, .observation-notice, .profile-save-error"))) {
+              if (drawerTransition) drawerTransition.current = false;
               event.preventDefault();
             } else {
               // The outside control may push history in the same interaction.
@@ -2290,9 +2238,7 @@ export function TaskDrawer({
                 <code data-tooltip={taskId}>{taskId}</code>
               </div>
               <Dialog.Close asChild>
-                <button className="close" aria-label={m.common.close}>
-                  ×
-                </button>
+                <button className="close" aria-label={m.common.close} />
               </Dialog.Close>
             </div>
             {query.isLoading ? (

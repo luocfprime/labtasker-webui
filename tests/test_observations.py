@@ -52,3 +52,41 @@ def test_worker_page_validation_and_filter_forwarding(monkeypatch):
     response = client().get("/api/webui/queues/default/workers?filter=status%20%3D%3D%20%22idle%22")
     assert response.status_code == 200
     assert calls[0]["filter"] == 'status == "idle"'
+
+
+def test_worker_page_forwards_observability_fields_and_defaults_old_servers(monkeypatch):
+    current = {
+        "id": "w_ABCDEFGHIJKL",
+        "queue": "default",
+        "route": "gpu",
+        "status": "busy",
+        "task_id": "t_ABCDEFGHIJKL",
+        "metadata": {"hostname": "node-7", "device": {"index": 0}},
+        "telemetry": {"gpu": {"utilization": 0.75}},
+        "telemetry_updated_at": "2026-09-16T08:00:00Z",
+        "last_seen_at": "2026-09-16T08:00:01Z",
+        "expires_at": "2026-09-16T08:05:01Z",
+    }
+    legacy = {
+        key: value
+        for key, value in current.items()
+        if key not in {"metadata", "telemetry", "telemetry_updated_at"}
+    }
+    payload = current
+
+    async def request(*args, **kwargs):
+        return {"items": [payload], "next_cursor": None}
+
+    monkeypatch.setattr(Upstream, "request", request)
+    response = client().get("/api/webui/queues/default/workers")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["metadata"] == current["metadata"]
+    assert response.json()["items"][0]["telemetry"] == current["telemetry"]
+
+    payload = legacy
+    response = client().get("/api/webui/queues/default/workers")
+    assert response.status_code == 200
+    worker = response.json()["items"][0]
+    assert worker["metadata"] == {}
+    assert worker["telemetry"] is None
+    assert worker["telemetry_updated_at"] is None

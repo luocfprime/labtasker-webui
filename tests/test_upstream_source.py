@@ -34,7 +34,17 @@ def test_bff_against_upstream_source(tmp_path, monkeypatch):
             assert response.status_code in {200, 201}, response.text
         response = seed.put(
             "/api/v2/queues/compatibility/workers/w_000000000000",
-            json={"route": "gpu", "status": "idle", "task_id": None},
+            json={
+                "route": "gpu",
+                "status": "idle",
+                "task_id": None,
+                "metadata": {"hostname": "node-7", "device": {"index": 0}},
+            },
+        )
+        assert response.status_code == 204, response.text
+        response = seed.post(
+            "/api/v2/queues/compatibility/workers/w_000000000000/telemetry",
+            json={"telemetry": {"gpu": {"utilization": 0.75}}},
         )
         assert response.status_code == 204, response.text
 
@@ -72,9 +82,18 @@ def test_bff_against_upstream_source(tmp_path, monkeypatch):
             assert groups.json()["items"] == [
                 {"key": {"routes": "gpu", "status": "pending"}, "count": 101}
             ]
-            workers = bff.get(base + "/workers", params={"filter": 'route == "gpu"'})
+            workers = bff.get(
+                base + "/workers",
+                params={
+                    "filter": ('metadata.hostname == "node-7" and telemetry.gpu.utilization > 0.5')
+                },
+            )
             assert workers.status_code == 200, workers.text
-            assert workers.json()["items"][0]["status"] == "idle"
+            worker = workers.json()["items"][0]
+            assert worker["status"] == "idle"
+            assert worker["metadata"] == {"hostname": "node-7", "device": {"index": 0}}
+            assert worker["telemetry"] == {"gpu": {"utilization": 0.75}}
+            assert worker["telemetry_updated_at"]
             groups = bff.get(base + "/worker-groups")
             assert groups.status_code == 200, groups.text
             assert groups.json()["items"][0]["count"] == 1
