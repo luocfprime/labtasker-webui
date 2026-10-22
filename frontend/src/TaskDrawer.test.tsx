@@ -51,6 +51,7 @@ function renderDrawer(close = vi.fn()) {
         close={close}
         changed={() => undefined}
         requestDelete={() => undefined}
+        openTask={() => undefined}
       />
     </QueryClientProvider>,
   );

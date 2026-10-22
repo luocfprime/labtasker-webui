@@ -27,8 +27,10 @@ The key features are:
 - **Reusable data views:** Save filters, sorting, and column layouts for each
   connection and Queue. Switch views without rebuilding the table each time.
 - **Complete Task inspection:** Open a Task to inspect its arguments, metadata,
-  execution timeline, errors, and results. Cancel, requeue, delete, or set the priority
-  of selected Tasks through explicit controls.
+  execution timeline, errors, and results. Read experimental dependency lists
+  and open predecessor Tasks in the same Queue. Cancel, requeue, delete, or set the priority
+  of selected Tasks through explicit controls. Archive finished Tasks to keep
+  their results outside daily lists, then restore them when needed.
 - **Easy local use:** Launch from Python without Node.js. Remember connections
   and UI preferences in the WebUI working directory's `.labtasker/` folder.
 
@@ -78,6 +80,11 @@ args.test_num
 result.succ_rate
 ```
 
+Add `dependencies` to display predecessor IDs or `dependencies.length` for their
+count. The Task drawer provides links to inspect those Tasks, including archived
+records. Dependencies are experimental; the Server checks predecessor success
+when claiming a new run.
+
 Missing values stay blank. Dropdowns and filter presets apply immediately;
 text filters apply on Enter or when leaving the input group. **Apply** remains
 available as a fallback.
@@ -86,6 +93,15 @@ Use **+ Create view** beside the breadcrumbs to save the current filters,
 sorting, and columns. A dot marks changes to the selected view; **Save** updates
 it. The actions menu provides **Save as…**, **Rename**, **Reset changes**, and
 **Delete**. Deleting a view leaves Tasks and the current layout intact.
+
+On Servers supporting Task archival, use **Archive selected** or **Archive** in
+the drawer to hide terminal Tasks while keeping results. Bulk archival asks for
+confirmation with the selected Task count. Enable **Include archived**
+to browse and restore them; add `archived == True` to show only archives. The scope
+is saved with views and shared by list totals, status counts and route summaries.
+**Inactive routes** is independent and does not include archived Tasks by itself.
+Requeue restores visibility. Older Servers report an error for unsupported archive
+writes; ordinary browsing remains available.
 
 The list loads more Tasks as you scroll and preserves existing selections.
 While reading older rows, background refresh does not reorder the list.

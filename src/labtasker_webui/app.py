@@ -17,6 +17,7 @@ from .local import local_connection
 from .operations import OperationStore
 from .profile import Profile
 from .schemas import (
+    ArchiveUpdateRequest,
     BatchRequest,
     ConnectRequest,
     CountResponse,
@@ -322,10 +323,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dimensions: list[str],
         cursor: str | None,
         include_inactive: bool = True,
+        include_archived: bool = False,
     ) -> Any:
         params: dict[str, Any] = {"group_by": ",".join(dimensions), "limit": 1000}
         if cursor:
             params["cursor"] = cursor
+        if include_archived:
+            params["include_archived"] = "true"
         if not include_inactive:
             params["filter"] = 'status in ["pending", "running"]'
         value = await observation_request(
@@ -352,6 +356,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
         cursor: str | None = None,
         include_inactive: bool = False,
+        include_archived: bool = False,
     ) -> Any:
         return await grouped_counts(
             queue,
@@ -360,6 +365,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ["routes", "status"],
             cursor,
             include_inactive,
+            include_archived,
         )
 
     @app.get("/api/webui/queues/{queue}/worker-groups")
@@ -396,6 +402,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         queue: str,
         session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
         status: TaskStatus | None = None,
+        include_archived: bool = False,
         name: str | None = None,
         name_fuzzy: str | None = None,
         filter_expression: Annotated[str | None, Query(alias="filter")] = None,
@@ -408,6 +415,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {
                 k: v
                 for k, v in {
+                    "include_archived": "true" if include_archived else None,
                     "status": status,
                     "name": name,
                     "name_fuzzy": name_fuzzy,
@@ -432,6 +440,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         queue: str,
         session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
         status: TaskStatus | None = None,
+        include_archived: bool = False,
         name: str | None = None,
         name_fuzzy: str | None = None,
         filter_expression: Annotated[str | None, Query(alias="filter")] = None,
@@ -439,6 +448,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         params = {
             k: v
             for k, v in {
+                "include_archived": "true" if include_archived else None,
                 "status": status,
                 "name": name,
                 "name_fuzzy": name_fuzzy,
@@ -486,6 +496,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             TaskResponse,
         )
 
+    @app.patch("/api/webui/queues/{queue}/tasks/{task_id}/archived")
+    async def update_task_archive(
+        queue: str,
+        task_id: str,
+        update: ArchiveUpdateRequest,
+        session_id: Annotated[str | None, Cookie(alias=COOKIE)] = None,
+    ) -> Any:
+        return validated(
+            await upstream.request(
+                connection(session_id),
+                "PATCH",
+                f"/api/v2/queues/{quote(queue, safe='')}/tasks/{quote(task_id, safe='')}",
+                json={"archived": update.archived},
+            ),
+            TaskResponse,
+        )
+
     @app.post("/api/webui/queues/{queue}/tasks/{task_id}/{action}")
     async def lifecycle(
         queue: str,
@@ -529,6 +556,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         params = {
             k: v
             for k, v in {
+                "include_archived": "true" if selector.include_archived else None,
                 "status": selector.status,
                 "name": selector.name,
                 "name_fuzzy": selector.name_fuzzy,

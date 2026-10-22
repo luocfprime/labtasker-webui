@@ -27,6 +27,7 @@ class ConnectRequest(BaseModel):
 
 
 class SelectRequest(BaseModel):
+    include_archived: bool = Field(default=False, strict=True)
     status: TaskStatus | None = None
     name: str | None = None
     name_fuzzy: str | None = None
@@ -35,6 +36,12 @@ class SelectRequest(BaseModel):
 
 class BatchRequest(BaseModel):
     task_ids: list[str] = Field(min_length=1, max_length=1000)
+
+
+class ArchiveUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    archived: bool = Field(strict=True)
 
 
 class PriorityUpdateRequest(BaseModel):
@@ -60,6 +67,7 @@ class TaskResponse(BaseModel):
     id: str
     queue: str
     status: TaskStatus
+    archived: bool = Field(default=False, strict=True)
     name: str | None
     args: dict[str, Any]
     metadata: dict[str, Any]
@@ -67,6 +75,7 @@ class TaskResponse(BaseModel):
     attempt: int
     max_attempts: int
     routes: list[str]
+    dependencies: list[str] = Field(default_factory=list, strict=True)
     result: dict[str, Any]
     progress: dict[str, Any] | None = None
     progress_updated_at: datetime | None = None

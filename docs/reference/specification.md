@@ -341,3 +341,60 @@ means pending/running Task demand without active Workers. Inactive routes are om
 groups, refreshed every 15 seconds; loading or unavailable observations never display
 as zero. Completion includes succeeded, failed and cancelled Tasks. Failure rate and
 recent Task details are omitted; individual Tasks remain available inside the Queue.
+
+## Task archival
+
+Task list, status-card counts, matching totals and route Task groups default to
+excluding archived Tasks. The **Include archived** checkbox expands this scope
+without changing the advanced expression. For archives only, enable the checkbox
+and set `archived == True`. The scope is part of filters, URL history, local
+settings and saved views. Missing scope in old views/settings means false.
+Changing it clears selection and pagination. Sorting alone still retains selection.
+All Task list/count and route-group cache keys bind the scope.
+The visibility checkbox shares the status-count bar. Archived rows show a distinct
+badge before the Task name; truncating a long name keeps the badge visible.
+
+The BFF forwards query `include_archived: bool = False` on GET
+`/api/webui/queues/{queue}/tasks`, `/tasks/count`, and `/task-groups`.
+POST `/api/webui/queues/{queue}/delete-snapshot` accepts the same strict Boolean
+in its selector, preserves it in the returned snapshot and uses it on every page.
+Delete operations consume fixed IDs and need no archive selector. Queue overview
+counts and recent activity use the daily default scope; Queues themselves remain.
+Worker requests never accept the Task archive selector. Route Task groups combine
+it with the independent `include_inactive` selection. Active Workers can keep a
+route visible when all its Tasks are archived.
+
+PATCH `/api/webui/queues/{queue}/tasks/{task_id}/archived` accepts only
+`{"archived": true|false}` with a strict Boolean. It forwards the ordinary Task
+PATCH and returns the updated Task or the upstream error. The drawer and selected
+Task controls offer Archive/Restore for terminal Tasks. Selected actions reuse
+bounded per-ID requests and keep failures selected; no bulk archive resource is
+created. Archive selected opens a confirmation showing the selected Task count and
+explaining how to restore visibility. Cancel or Escape preserves selection without
+sending archive requests; confirmation rechecks action eligibility before submitting.
+Archive/restore/requeue refresh Task records, lists, status/matching counts,
+route Task counts and Queue summaries. ID deep links remain valid outside the list
+scope. Task responses explicitly validate `archived`, defaulting to false for old
+Servers. An unsupported archive write follows the ordinary upstream error path.
+
+## Experimental Task dependencies
+
+Task responses explicitly carry `dependencies: list[str]`, defaulting to `[]`
+when absent from an older Server. The BFF preserves order and duplicates and
+rejects malformed dependency arrays through its existing `malformed_upstream`
+error. No new upstream endpoint or query selector is added.
+
+The Task drawer shows a Dependencies section with an experimental label, the
+same-Queue success condition for claiming a new run, and one link per supplied
+ID. Empty lists show None. A link reuses the existing ID-based Task lookup and
+replaces the inspected Task without changing Queue or filters; archived
+predecessors remain accessible. Closing or Back restores focus to the original
+Task row or Worker Task link. A missing target uses the normal not-found message;
+missing does not imply it was deleted. No predecessor is fetched until its link
+is opened. Self references and cycles do not trigger traversal, extra requests
+or a claimability diagnosis. List order does not imply execution order.
+
+Existing custom columns accept `dependencies` for the JSON array and
+`dependencies.length` for its count. These remain display paths; dependency
+filtering/grouping and editing are not introduced. Dependency links do not add
+confirmation prompts, graph state or scheduling controls.

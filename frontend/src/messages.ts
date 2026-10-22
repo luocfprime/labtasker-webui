@@ -87,6 +87,8 @@ export const messages = {
     unavailableSelectedTasks:
       "Some selected Task statuses are no longer available. Refresh or clear the selection and select them again.",
     actionRequirement: {
+      archive: "Only finished Tasks can be archived.",
+      restore: "Only finished Tasks can be restored.",
       cancel: "Cancel requires every selected Task to be pending or running.",
       requeue:
         "Requeue requires every selected Task to be pending, failed, or cancelled.",
@@ -95,11 +97,11 @@ export const messages = {
     },
     ineligibleSelection: (statuses: string) =>
       `Ineligible selection: ${statuses}.`,
-    batchActionComplete: (count: number, result: "cancelled" | "requeued") =>
+    batchActionComplete: (count: number, result: "cancelled" | "requeued" | "archived" | "restored") =>
       `${plural(count, "Task")} ${result}.`,
     batchActionPartial: (
       completed: number,
-      result: "cancelled" | "requeued",
+      result: "cancelled" | "requeued" | "archived" | "restored",
       failed: number,
     ) => `${plural(completed, "Task")} ${result}; ${plural(failed, "Task")} failed and ${failed === 1 ? "remains" : "remain"} selected.`,
     priorityComplete: (count: number, priority: number) =>
@@ -151,7 +153,7 @@ export const messages = {
     copyValue: (label?: string) => `Copy ${label || "value"}`,
   },
   task: {
-    removed: "This Task was removed from the Server.",
+    removed: "This Task was not found in this Queue.",
     details: "Task details",
     resize: "Resize Task details",
     loading: "Loading Task…",

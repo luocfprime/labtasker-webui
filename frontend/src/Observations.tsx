@@ -22,9 +22,9 @@ import { saveSetting } from "./profile";
 
 const polling = (query: {state: {error: Error | null}}) => document.hidden || (isPermanentRequestError(query.state.error) || query.state.error instanceof ApiRequestError && query.state.error.status === 501) ? false : 15_000;
 function duration(ms: number) { const seconds = Math.max(0, Math.floor(ms / 1000)); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
-export function useRouteCounts(queue: string, server: string, inactive: boolean) {
+export function useRouteCounts(queue: string, server: string, inactive: boolean, includeArchived = false) {
   const prefix = `/api/webui/queues/${encodeURIComponent(queue)}`;
-  const tasks = useQuery({queryKey: ["route-tasks", server, queue, inactive], queryFn: () => readGroups(`${prefix}/task-groups?include_inactive=${inactive}`), refetchInterval: polling, retry: (n, error) => n < 3 && !(error instanceof ApiRequestError && error.status === 501) && !isPermanentRequestError(error)});
+  const tasks = useQuery({queryKey: ["route-tasks", server, queue, inactive, includeArchived], queryFn: () => readGroups(`${prefix}/task-groups?include_inactive=${inactive}&include_archived=${includeArchived}`), refetchInterval: polling, retry: (n, error) => n < 3 && !(error instanceof ApiRequestError && error.status === 501) && !isPermanentRequestError(error)});
   const workers = useQuery({queryKey: ["route-workers", server, queue], queryFn: () => readGroups(`${prefix}/worker-groups`), refetchInterval: polling, retry: (n, error) => n < 3 && !(error instanceof ApiRequestError && error.status === 501) && !isPermanentRequestError(error)});
   const rows = useMemo(() => combineRoutes(tasks.data || [], workers.data || []), [tasks.data, workers.data]);
   return {tasks, workers, rows};

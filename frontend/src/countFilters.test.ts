@@ -18,3 +18,10 @@ it("ignores the selected list status when counting other statuses", () => {
   expect(statusCountParams(filters, "running").toString()).toBe("status=running");
   expect(statusCountParams(filters, "pending").toString()).toBe("status=pending");
 });
+
+it("uses the same archive range as the Task list", () => {
+  const filters = {name: "", filter: "archived == True", include_archived: true};
+  const params = statusCountParams(filters, "cancelled");
+  expect(params.get("include_archived")).toBe("true");
+  expect(params.get("filter")).toBe("archived == True");
+});

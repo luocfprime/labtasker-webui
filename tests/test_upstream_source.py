@@ -32,6 +32,12 @@ def test_bff_against_upstream_source(tmp_path, monkeypatch):
                 },
             )
             assert response.status_code in {200, 201}, response.text
+        dependencies = ["t_000000000100", "t_000000000100"]
+        response = seed.patch(
+            "/api/v2/queues/compatibility/tasks/t_000000000000",
+            json={"dependencies": dependencies},
+        )
+        assert response.status_code == 200, response.text
         response = seed.put(
             "/api/v2/queues/compatibility/workers/w_000000000000",
             json={
@@ -104,8 +110,27 @@ def test_bff_against_upstream_source(tmp_path, monkeypatch):
             assert invalid.status_code == 422
             assert invalid.json()["error"]["code"] == "invalid_cursor"
             task = base + "/tasks/t_000000000000"
+            assert bff.get(task).json()["dependencies"] == dependencies
             assert bff.post(task + "/cancel").json()["status"] == "cancelled"
-            assert bff.post(task + "/requeue").json()["status"] == "pending"
+            assert bff.patch(task + "/archived", json={"archived": True}).json()["archived"] is True
+            assert bff.get(base + "/tasks/count").json() == {"count": 100}
+            archived_selection = {"include_archived": True, "filter": "archived == True"}
+            assert (
+                bff.get(base + "/tasks", params=archived_selection).json()["items"][0]["archived"]
+                is True
+            )
+            assert bff.get(base + "/tasks/count", params=archived_selection).json() == {"count": 1}
+            groups = bff.get(base + "/task-groups", params={"include_inactive": True})
+            assert groups.json()["count"] == 100
+            groups = bff.get(
+                base + "/task-groups", params={"include_inactive": True, "include_archived": True}
+            )
+            assert groups.json()["count"] == 101
+            snapshot = bff.post(base + "/delete-snapshot", json=archived_selection)
+            assert snapshot.json()["task_ids"] == ["t_000000000000"]
+            assert snapshot.json()["selector"]["include_archived"] is True
+            assert bff.post(task + "/requeue").json()["archived"] is False
+            assert bff.get(base + "/tasks/count").json() == {"count": 101}
             deletion = bff.post(base + "/delete-operations", json={"task_ids": ["t_000000000000"]})
             assert deletion.status_code == 202, deletion.text
             deadline = time.monotonic() + 5

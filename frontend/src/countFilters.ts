@@ -1,6 +1,7 @@
-type Selector = {name: string; filter: string; route?: string};
+type Selector = {name: string; filter: string; route?: string; include_archived?: boolean};
 export function statusCountParams(filters: Selector, status: string): URLSearchParams {
   const params = new URLSearchParams({status});
+  if (filters.include_archived) params.set("include_archived", "true");
   if (filters.name) params.set("name_fuzzy", filters.name);
   const expression = effectiveTaskFilter(filters);
   if (expression) params.set("filter", expression);

@@ -2118,3 +2118,12 @@ td code {
 
 .observation-notices:empty { display: none; }
 #corner-notifications > * { flex-shrink: 0; }
+
+.archive-visibility { display: inline-flex; align-items: center; align-self: center; gap: 6px; margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.archive-visibility input { margin: 0; }
+.task-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.task-title .task-name { min-width: 0; }
+.task-archive-badge { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 0 5px; border: 1px solid #cbd2dc; border-radius: 3px; background: #eef1f5; color: #505c6c; font-size: 11px; font-weight: 500; line-height: 14px; white-space: nowrap; }
+
+.task-dependencies { margin: 12px 0 0; padding-left: 20px; max-height: 240px; overflow-y: auto; }
+.task-dependencies li + li { margin-top: 6px; }

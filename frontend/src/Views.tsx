@@ -5,7 +5,7 @@ import { useAnchoredPanel } from "./useAnchoredPanel";
 import { Select } from "./Select";
 
 export type ViewState = {
-  filters: {status: string; name: string; filter: string; order_by: string; descending: boolean; route?: string};
+  filters: {status: string; name: string; filter: string; order_by: string; descending: boolean; route?: string; include_archived?: boolean};
   visible: string[]; custom: string[]; order: string[]; widths: Record<string, number>;
 };
 type View = {id: string; name: string; state: ViewState};
@@ -14,6 +14,7 @@ function sameViewState(a: ViewState, b: ViewState) {
   return (["status", "name", "filter", "order_by", "descending"] as const)
     .every(key => a.filters[key] === b.filters[key]) &&
     (a.filters.route || "") === (b.filters.route || "") &&
+    !!a.filters.include_archived === !!b.filters.include_archived &&
     (["visible", "custom", "order"] as const).every(key =>
       a[key].length === b[key].length && a[key].every((value, index) => value === b[key][index])) &&
     Object.keys(a.widths).length === Object.keys(b.widths).length &&
@@ -31,6 +32,7 @@ function read(scope: string): Collection {
     return typeof v?.id === "string" && typeof v.name === "string" && s &&
       [s.visible, s.custom, s.order].every(a => Array.isArray(a) && a.every(x => typeof x === "string")) &&
       s.filters && ["status", "name", "filter", "order_by"].every(k => typeof (s.filters as Record<string, unknown>)[k] === "string") &&
+      (s.filters.include_archived === undefined || typeof s.filters.include_archived === "boolean") &&
       (s.filters.route === undefined || typeof s.filters.route === "string") && typeof s.filters.descending === "boolean" && s.widths && typeof s.widths === "object" &&
       Object.values(s.widths).every(w => typeof w === "number" && w >= 60 && w <= 10000);
   })};

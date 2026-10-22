@@ -131,6 +131,9 @@ tasks = {
         "finished_at": now,
     },
 }
+for task in tasks.values():
+    task["archived"] = False
+    task["dependencies"] = []
 initial_tasks = deepcopy(tasks)
 
 
@@ -155,6 +158,7 @@ def queues() -> list[dict[str, str]]:
 
 @app.get("/api/v2/queues/{queue}/tasks")
 def list_tasks(
+    include_archived: bool = False,
     status: str | None = None,
     name: str | None = None,
     name_fuzzy: str | None = None,
@@ -164,7 +168,7 @@ def list_tasks(
     descending: bool = True,
     cursor: str | None = None,
 ) -> dict[str, object]:
-    items = list(tasks.values())
+    items = [task for task in tasks.values() if include_archived or not task["archived"]]
     if status:
         items = [item for item in items if item["status"] == status]
     if name:
@@ -179,17 +183,30 @@ def list_tasks(
             return True
 
         items = [item for item in items if matches(item["name"])]
+    if filter == "archived == True":
+        items = [item for item in items if item["archived"]]
     return {"items": items[:limit], "next_cursor": None}
 
 
 @app.get("/api/v2/queues/{queue}/tasks/count")
 def count_tasks(
+    include_archived: bool = False,
     status: str | None = None,
     name: str | None = None,
     filter: str | None = None,
     name_fuzzy: str | None = None,
 ) -> dict[str, int]:
-    return {"count": len(list_tasks(status=status, name=name, name_fuzzy=name_fuzzy)["items"])}
+    return {
+        "count": len(
+            list_tasks(
+                status=status,
+                name=name,
+                name_fuzzy=name_fuzzy,
+                filter=filter,
+                include_archived=include_archived,
+            )["items"]
+        )
+    }
 
 
 @app.get("/api/v2/queues/{queue}/tasks/{task_id}")
@@ -223,6 +240,7 @@ def cancel(task_id: str) -> dict[str, object]:
 @app.post("/api/v2/queues/{queue}/tasks/{task_id}/requeue")
 def requeue(task_id: str) -> dict[str, object]:
     tasks[task_id]["status"] = "pending"
+    tasks[task_id]["archived"] = False
     return tasks[task_id]
 
 

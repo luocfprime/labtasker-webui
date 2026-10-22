@@ -49,11 +49,12 @@ function LiveExecutionDuration({ task }: { task: Task }) {
 }
 
 type Status = "pending" | "running" | "succeeded" | "failed" | "cancelled";
-type SelectionAction = "cancel" | "requeue" | "delete" | "priority";
+type SelectionAction = "cancel" | "requeue" | "delete" | "priority" | "archive" | "restore";
 type Task = {
   id: string;
   queue: string;
   status: Status;
+  archived: boolean;
   name: string | null;
   args: Record<string, unknown>;
   metadata: Record<string, unknown>;
@@ -61,6 +62,7 @@ type Task = {
   attempt: number;
   max_attempts: number;
   routes: string[];
+  dependencies: string[];
   result: Record<string, unknown>;
   progress: Record<string, unknown> | null;
   progress_updated_at: string | null;
@@ -86,6 +88,7 @@ type QueueSummary = {
 };
 type TaskPage = { items: Task[]; next_cursor: string | null };
 type Selector = {
+  include_archived?: boolean;
   status: string | null;
   name: string | null;
   filter: string | null;
@@ -108,6 +111,7 @@ type BatchOperation = {
   outcomes: BatchOutcome[];
 };
 type Filters = {
+  include_archived?: boolean;
   route?: string;
   status: string;
   name: string;
@@ -118,6 +122,7 @@ type Filters = {
 function filtersFromUrl(): Filters {
   const url = new URLSearchParams(location.search);
   return {
+    include_archived: url.get("include_archived") === "true",
     route: url.get("route") || "",
     status: url.get("status") || "",
     name: url.get("name") || "",
@@ -127,11 +132,11 @@ function filtersFromUrl(): Filters {
   };
 }
 function sameFilters(a: Filters, b: Filters) {
-  return (["status", "name", "filter", "order_by", "descending"] as const).every(key => a[key] === b[key]) && (a.route || "") === (b.route || "");
+  return (["status", "name", "filter", "order_by", "descending"] as const).every(key => a[key] === b[key]) && (a.route || "") === (b.route || "") && !!a.include_archived === !!b.include_archived;
 }
 function sameTaskRange(a: Filters, b: Filters) {
   return a.status === b.status && a.name === b.name && a.filter === b.filter &&
-    (a.route || "") === (b.route || "");
+    (a.route || "") === (b.route || "") && !!a.include_archived === !!b.include_archived;
 }
 const statuses: Status[] = [
   "pending",
@@ -145,6 +150,8 @@ const selectionActionStatuses: Record<SelectionAction, readonly Status[]> = {
   requeue: ["pending", "failed", "cancelled"],
   delete: ["pending", "succeeded", "failed", "cancelled"],
   priority: ["pending", "succeeded", "failed", "cancelled"],
+  archive: ["succeeded", "failed", "cancelled"],
+  restore: ["succeeded", "failed", "cancelled"],
 };
 function selectionActionReason(
   action: SelectionAction,
@@ -893,7 +900,6 @@ function Workspace({
   const [tab, setTab] = useState(() => new URLSearchParams(location.search).get("tab") === "workers" ? "workers" : "tasks");
   const [workerStatus, setWorkerStatus] = useState(() => new URLSearchParams(location.search).get("worker_status") || "");
   const [workerFilterExpression, setWorkerFilterExpression] = useState(() => new URLSearchParams(location.search).get("worker_filter") || "");
-  const routeCounts = useRouteCounts(queue, server, preferences.inactive);
   const navigatePanel = (nextTab: string, nextStatus = workerStatus, nextWorkerFilter = workerFilterExpression) => {
     const url = new URL(location.href);
     if (nextTab === "workers") url.searchParams.set("tab", "workers"); else url.searchParams.delete("tab");
@@ -908,13 +914,14 @@ function Workspace({
   const [initialLayout] = useState(() => readQueueLayout(scope));
   const [filters, setFilters] = useState<Filters>(() => {
     const url = new URLSearchParams(location.search);
-    if (!historyNavigation && !initialStatus && !["route", "status", "name", "filter", "order_by", "descending"].some((key) => url.has(key))) {
+    if (!historyNavigation && !initialStatus && !["route", "status", "name", "filter", "order_by", "descending", "include_archived"].some((key) => url.has(key))) {
       try {
         const saved = JSON.parse(localStorage.getItem("labtasker:filters:v1") || "{}")[`${server}/${queue}`];
-        if (saved && ["status", "name", "filter", "order_by"].every((key) => typeof saved[key] === "string") && typeof saved.descending === "boolean") return saved;
+        if (saved && ["status", "name", "filter", "order_by"].every((key) => typeof saved[key] === "string") && typeof saved.descending === "boolean") return {...saved, include_archived: saved.include_archived === true};
       } catch {}
     }
     return {
+      include_archived: url.get("include_archived") === "true",
       route: url.get("route") || "",
       status: url.get("status") || initialStatus,
       name: url.get("name") || "",
@@ -923,6 +930,7 @@ function Workspace({
       descending: url.get("descending") !== "false",
     };
   });
+  const routeCounts = useRouteCounts(queue, server, preferences.inactive, !!filters.include_archived);
   const columnMenuRef = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const menu = columnMenuRef.current;
@@ -1062,7 +1070,7 @@ function Workspace({
   const [confirm, setConfirm] = useState<DeleteTarget | null>(null);
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
-    if (v !== "" && v !== undefined && k !== "descending" && k !== "route") params.set(k === "name" ? "name_fuzzy" : k, String(v));
+    if (v !== "" && v !== undefined && k !== "descending" && k !== "route" && !(k === "include_archived" && !v)) params.set(k === "name" ? "name_fuzzy" : k, String(v));
   });
   const effectiveFilter = effectiveTaskFilter(filters);
   if (effectiveFilter) params.set("filter", effectiveFilter);
@@ -1122,7 +1130,7 @@ function Workspace({
     }
   }, [tasks.error, back]);
   const queueCounts = useQuery<Record<Status, number>>({
-    queryKey: ["queue-counts", queue, filters.name, filters.filter, filters.route],
+    queryKey: ["queue-counts", queue, filters.name, filters.filter, filters.route, !!filters.include_archived],
     enabled: tab === "tasks",
     queryFn: async () => {
       const values = await Promise.all(
@@ -1140,6 +1148,7 @@ function Workspace({
     refetchInterval: adaptivePolling(5_000),
   });
   const countParams = new URLSearchParams();
+  if (filters.include_archived) countParams.set("include_archived", "true");
   if (filters.status) countParams.set("status", filters.status);
   if (filters.name) countParams.set("name_fuzzy", filters.name);
   if (effectiveFilter) countParams.set("filter", effectiveFilter);
@@ -1148,6 +1157,7 @@ function Workspace({
     queryKey: [
       "matching-count",
       queue,
+      !!filters.include_archived,
       filters.route,
       filters.status,
       filters.name,
@@ -1177,11 +1187,12 @@ function Workspace({
       "descending",
       "cursor",
       "route",
+      "include_archived",
     ]) {
       url.searchParams.delete(key);
     }
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== "" && value !== undefined && !(key === "order_by" && value === "created_at")) {
+      if (value !== "" && value !== undefined && !(key === "order_by" && value === "created_at") && !(key === "include_archived" && !value)) {
         url.searchParams.set(key, String(value));
       }
     });
@@ -1261,6 +1272,8 @@ function Workspace({
     message: string;
   } | null>(null);
   const [priorityInput, setPriorityInput] = useState("");
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const archiveButton = useRef<HTMLButtonElement>(null);
   const selectionSubmitting = useRef(false);
   const selectionMutation = useMutation({
     mutationKey: ["selection-action", queue],
@@ -1281,12 +1294,13 @@ function Workspace({
             const target = targets[cursor++];
             try {
               const taskPath = `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(target.id)}`;
-              await api(
-                action === "priority" ? `${taskPath}/priority` : `${taskPath}/${action}`,
-                action === "priority"
-                  ? { method: "PATCH", body: JSON.stringify({ priority }) }
-                  : { method: "POST" },
-              );
+              if (action === "priority") {
+                await api(`${taskPath}/priority`, {method: "PATCH", body: JSON.stringify({priority})});
+              } else if (action === "archive" || action === "restore") {
+                await api(`${taskPath}/archived`, {method: "PATCH", body: JSON.stringify({archived: action === "archive"})});
+              } else {
+                await api(`${taskPath}/${action}`, {method: "POST"});
+              }
             } catch (reason) {
               failed.push({
                 id: target.id,
@@ -1301,6 +1315,7 @@ function Workspace({
     onSuccess: ({ action, targets, failed, priority }) => {
       const failedIds = new Set(failed.map(item => item.id));
       const completed = targets.length - failed.length;
+      const result = {cancel: "cancelled", requeue: "requeued", archive: "archived", restore: "restored", priority: "updated"} as const;
       setSelected(current => {
         const next = new Set(current);
         targets.forEach(target => {
@@ -1313,15 +1328,16 @@ function Workspace({
           key: [...failedIds].sort().join("\n"),
           message: `${action === "priority"
             ? m.workspace.priorityPartial(completed, failed.length, priority!)
-            : m.workspace.batchActionPartial(completed, action === "cancel" ? "cancelled" : "requeued", failed.length)} ${failed.map(item => `${item.id}: ${item.message}`).join(" ")}`,
+            : m.workspace.batchActionPartial(completed, result[action], failed.length)} ${failed.map(item => `${item.id}: ${item.message}`).join(" ")}`,
         });
       } else {
         setSelectionError(null);
         notify(action === "priority"
           ? m.workspace.priorityComplete(completed, priority!)
-          : m.workspace.batchActionComplete(completed, action === "cancel" ? "cancelled" : "requeued"));
+          : m.workspace.batchActionComplete(completed, result[action]));
       }
       void tasks.refetch();
+      void qc.invalidateQueries({ queryKey: ["route-tasks", server, queue] });
       void qc.invalidateQueries({ queryKey: ["queues"] });
       void qc.invalidateQueries({ queryKey: ["queue-counts", queue] });
       void qc.invalidateQueries({ queryKey: ["matching-count", queue] });
@@ -1420,12 +1436,20 @@ function Workspace({
         header: m.columns.task,
         cell: ({ row }) => (
           <>
-            <b
-              className="task-name"
-              data-tooltip={row.original.name || m.workspace.unnamedTask}
-            >
-              {row.original.name || m.workspace.unnamedTask}
-            </b>
+            <div className="task-title">
+              {row.original.archived && <span className="task-archive-badge">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" aria-hidden="true">
+                  <path d="M2 3h12v3H2zM3 6v7h10V6M6 9h4" />
+                </svg>
+                Archived
+              </span>}
+              <b
+                className="task-name"
+                data-tooltip={row.original.name || m.workspace.unnamedTask}
+              >
+                {row.original.name || m.workspace.unnamedTask}
+              </b>
+            </div>
             <code data-tooltip={row.original.id}>{row.original.id}</code>
           </>
         ),
@@ -1516,8 +1540,10 @@ function Workspace({
       let content = 0;
       if (id.startsWith("path:")) content = measure(pathValue(task, id.slice(5)));
       else if (id === "task") {
+        const badge = taskListRef.current?.querySelector(".task-archive-badge");
+        const badgeWidth = task.archived ? (badge?.getBoundingClientRect().width ?? measure("Archived") + 28) + 6 : 0;
         content = Math.max(
-          measure(task.name || m.workspace.unnamedTask, sample?.querySelector("b") || header),
+          measure(task.name || m.workspace.unnamedTask, sample?.querySelector("b") || header) + badgeWidth,
           measure(task.id, sample?.querySelector("code") || header),
         );
       } else if (id === "routes") {
@@ -1553,14 +1579,13 @@ function Workspace({
     void queueCounts.refetch();
     void matchingCount.refetch();
   };
-  const openTask = (id: string) => {
+  const navigateTask = (id: string) => {
     if (workerId) {
       // A newly mounted Radix dialog can observe the pointer event that
       // selected it from the previous dialog as an outside interaction.
       drawerTransition.current = true;
       window.setTimeout(() => {drawerTransition.current = false;}, 250);
     }
-    originTaskId.current = id;
     const url = new URL(location.href);
     url.searchParams.set("task", id);
     url.searchParams.delete("worker");
@@ -1571,6 +1596,10 @@ function Workspace({
     }
     setTaskId(id);
     setWorkerId(null);
+  };
+  const openTask = (id: string) => {
+    originTaskId.current = id;
+    navigateTask(id);
   };
   const closeTask = (replaceHistory = false) => {
     // Radix may report the old drawer closing after another inspector has
@@ -1705,6 +1734,11 @@ function Workspace({
             <span>{m.status[s]}</span>
           </button>
         ))}
+        <label className="archive-visibility">
+          <input type="checkbox" checked={!!filters.include_archived}
+            onChange={event => applyFields({include_archived: event.target.checked})} />
+          Include archived
+        </label>
       </div>
       <div className="toolbar">
         <Select label={m.workspace.allStatuses} value={draft.status}
@@ -1825,6 +1859,17 @@ function Workspace({
                   ? m.workspace.requeuingSelected : m.workspace.requeueSelected}
               </button>
             </span>
+            {(["archive", "restore"] as const).map(action => {
+              const reason = actionReason(action);
+              return <span key={action} className="selection-action-hint" data-tooltip={reason}
+                tabIndex={reason ? 0 : undefined} aria-label={reason}>
+                <button className="link" disabled={!!reason}
+                  ref={action === "archive" ? archiveButton : undefined}
+                  onClick={() => action === "archive" ? setConfirmArchive(true) : runSelectionAction(action)}>
+                  {action === "archive" ? "Archive selected" : "Restore selected"}
+                </button>
+              </span>;
+            })}
             <span className="selection-action-hint" data-tooltip={deleteReason}
               tabIndex={deleteReason ? 0 : undefined} aria-label={deleteReason}>
               <button className="danger-link" disabled={!!deleteReason}
@@ -2067,11 +2112,13 @@ function Workspace({
           taskId={taskId}
           close={closeTask}
           drawerTransition={drawerTransition}
+          openTask={navigateTask}
           changed={() => {
             tasks.refetch();
             qc.invalidateQueries({ queryKey: ["queues"] });
             qc.invalidateQueries({ queryKey: ["queue-counts", queue] });
             qc.invalidateQueries({ queryKey: ["matching-count", queue] });
+            qc.invalidateQueries({ queryKey: ["route-tasks", server, queue] });
           }}
           requestDelete={(id) => setConfirm({ task_ids: [id] })}
         />
@@ -2079,6 +2126,30 @@ function Workspace({
       {workerId && !taskId && (
         <WorkerDrawer queue={queue} server={server} workerId={workerId} close={closeWorker} openTask={openTask} />
       )}{" "}
+      {confirmArchive && (
+        <Dialog.Root open onOpenChange={open => !open && setConfirmArchive(false)}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="modal-back" />
+            <Dialog.Content className="modal" onCloseAutoFocus={event => {
+              event.preventDefault();
+              archiveButton.current?.focus();
+            }}>
+              <Dialog.Title asChild><h2>Archive {selected.size} {selected.size === 1 ? "Task" : "Tasks"}?</h2></Dialog.Title>
+              <Dialog.Description asChild>
+                <p>These Tasks will be hidden from the default view and counts. You can restore them later with Include archived.</p>
+              </Dialog.Description>
+              {actionReason("archive") && <p role="alert">{actionReason("archive")}</p>}
+              <div className="modal-actions">
+                <Dialog.Close asChild><button>Cancel</button></Dialog.Close>
+                <button className="primary" disabled={!!actionReason("archive")} onClick={() => {
+                  runSelectionAction("archive");
+                  setConfirmArchive(false);
+                }}>Archive {selected.size} {selected.size === 1 ? "Task" : "Tasks"}</button>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+      )}
       {confirm && (
         <DeleteDialog
           queue={queue}
@@ -2092,6 +2163,7 @@ function Workspace({
             qc.invalidateQueries({ queryKey: ["queues"] });
             qc.invalidateQueries({ queryKey: ["queue-counts", queue] });
             qc.invalidateQueries({ queryKey: ["matching-count", queue] });
+            qc.invalidateQueries({ queryKey: ["route-tasks", server, queue] });
           }}
         />
       )}
@@ -2106,6 +2178,7 @@ export function TaskDrawer({
   drawerTransition,
   changed,
   requestDelete,
+  openTask,
 }: {
   queue: string;
   taskId: string;
@@ -2113,6 +2186,7 @@ export function TaskDrawer({
   drawerTransition?: MutableRefObject<boolean>;
   changed: () => void;
   requestDelete: (id: string) => void;
+  openTask: (id: string) => void;
 }) {
   const qc = useQueryClient();
   const [width, setWidth] = useState(() => {
@@ -2141,8 +2215,10 @@ export function TaskDrawer({
     mutationKey: actionKey,
     mutationFn: ({id, action}: {id: string; action: string}) =>
       api(
-        `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(id)}/${action}`,
-        { method: "POST" },
+        `/api/webui/queues/${encodeURIComponent(queue)}/tasks/${encodeURIComponent(id)}/${action === "archive" || action === "restore" ? "archived" : action}`,
+        action === "archive" || action === "restore"
+          ? {method: "PATCH", body: JSON.stringify({archived: action === "archive"})}
+          : {method: "POST"},
       ),
     onSuccess: (_result, {id}) => {
       void qc.invalidateQueries({queryKey: ["task", queue, id]});
@@ -2252,7 +2328,13 @@ export function TaskDrawer({
                 <div className="drawer-body">
                   <div className="task-summary">
                     <Badge status={t.status} />
+                    {t.archived && <span>Archived</span>}
                     <div className="actions">
+                      {["succeeded", "failed", "cancelled"].includes(t.status) && (
+                        <button disabled={actionPending} onClick={() => action(t.archived ? "restore" : "archive")}>
+                          {t.archived ? "Restore" : "Archive"}
+                        </button>
+                      )}
                       {["pending", "running"].includes(t.status) && (
                         <button
                           disabled={actionPending}
@@ -2315,6 +2397,20 @@ export function TaskDrawer({
                         <ExecutionDuration task={t} now={durationNow} />
                       </dd>
                     </dl>
+                  </section>
+                  <section className="detail-section" aria-labelledby="task-dependencies-heading">
+                    <h3 id="task-dependencies-heading">Dependencies</h3>
+                    <p className="muted">Experimental. Each listed Task must exist in this Queue and succeed before a new run can be claimed.</p>
+                    {t.dependencies?.length ? (
+                      <ul className="task-dependencies">
+                        {t.dependencies.map((id, index) => (
+                          <li key={`${id}:${index}`}>
+                            <button type="button" className="link" data-task-link={id}
+                              onClick={() => openTask(id)}>{id}</button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <span className="muted">None</span>}
                   </section>
                   <section className="detail-section">
                     <h3>{m.task.timeline}</h3>
